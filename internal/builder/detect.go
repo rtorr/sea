@@ -80,6 +80,7 @@ func GenerateBuildCommands(system BuildSystem, projectDir, installDir, cc, cxx, 
 			"-DCMAKE_INSTALL_PREFIX=" + installDir,
 			"-DCMAKE_BUILD_TYPE=Release",
 			"-DBUILD_SHARED_LIBS=ON",
+			"-DCMAKE_POLICY_VERSION_MINIMUM=3.5",
 		}
 		// Only set compiler if explicitly configured — let CMake auto-detect on Windows/MSVC
 		if cc != "" {

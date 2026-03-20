@@ -97,6 +97,11 @@ func (b *Builder) Build() (string, error) {
 			return "", err
 		}
 
+		// Inject extra cmake args from manifest
+		if system == BuildCMake && len(b.Manifest.Build.CMakeArgs) > 0 && len(commands) > 0 {
+			commands[0] = append(commands[0], b.Manifest.Build.CMakeArgs...)
+		}
+
 		env := BuildEnv(b.Manifest, b.Profile, b.ProjectDir, installDir)
 
 		for _, argv := range commands {
@@ -175,10 +180,7 @@ func (b *Builder) buildFromSourceURL(installDir string) (string, error) {
 		}
 	}
 
-	// Add CMAKE_POLICY_VERSION_MINIMUM for modern cmake compat
-	if system == BuildCMake && len(commands) > 0 {
-		commands[0] = append(commands[0], "-DCMAKE_POLICY_VERSION_MINIMUM=3.5")
-	}
+	// CMAKE_POLICY_VERSION_MINIMUM is already added by GenerateBuildCommands
 
 	env := BuildEnv(b.Manifest, b.Profile, srcDir, installDir)
 
