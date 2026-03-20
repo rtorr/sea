@@ -30,10 +30,12 @@ func VerifyBuildOutput(m *manifest.Manifest, prof *profile.Profile, projectDir, 
 	includeDir := filepath.Join(installDir, "include")
 	libDir := filepath.Join(installDir, "lib")
 
-	// 1. Check headers exist
+	// 1. Check headers exist (or cmake config files — some packages install
+	// headers via cmake INTERFACE_INCLUDE_DIRECTORIES, not to include/)
 	headerCount := countFiles(includeDir)
-	if headerCount == 0 {
-		return fmt.Errorf("build produced no headers in %s/include/", installDir)
+	cmakeConfigCount := countFiles(filepath.Join(libDir, "cmake")) + countFiles(filepath.Join(installDir, "share", "cmake"))
+	if headerCount == 0 && cmakeConfigCount == 0 {
+		return fmt.Errorf("build produced no headers in %s/include/ and no cmake config files", installDir)
 	}
 
 	// Header-only packages don't need libraries
