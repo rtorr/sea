@@ -12,6 +12,7 @@ import (
 	"github.com/rtorr/sea/internal/abi"
 	"github.com/rtorr/sea/internal/archive"
 	"github.com/rtorr/sea/internal/config"
+	"github.com/rtorr/sea/internal/integrate"
 	"github.com/rtorr/sea/internal/manifest"
 	"github.com/rtorr/sea/internal/registry"
 	"github.com/spf13/cobra"
@@ -118,6 +119,10 @@ func runPublish(cmd *cobra.Command, args []string) error {
 	if len(includes) == 0 {
 		includes = []string{"include/**", "lib/**", "bin/**", "share/**", "LICENSE", "COPYING"}
 	}
+
+	// Relocate cmake configs BEFORE archiving — the archive should contain
+	// relative paths so packages work regardless of where they're installed.
+	integrate.RelocateCMakeConfigs(srcDir)
 
 	cmd.Printf("Packaging %s@%s for %s...\n", m.Package.Name, m.Package.Version, abiTag)
 	if err := archive.Pack(srcDir, includes, archivePath); err != nil {

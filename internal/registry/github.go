@@ -46,7 +46,15 @@ func (g *GitHub) Name() string { return g.name }
 
 func (g *GitHub) token() string {
 	if g.tokenEnv != "" {
-		return os.Getenv(g.tokenEnv)
+		if tok := os.Getenv(g.tokenEnv); tok != "" {
+			return tok
+		}
+	}
+	if tok := os.Getenv("GITHUB_TOKEN"); tok != "" {
+		return tok
+	}
+	if tok := ghAuthToken(); tok != "" {
+		return tok
 	}
 	return ""
 }

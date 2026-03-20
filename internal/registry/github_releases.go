@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"os/exec"
 	"strings"
 
 	"github.com/BurntSushi/toml"
@@ -53,8 +54,19 @@ func NewGitHubReleases(name, rawURL, tokenEnv string) (*GitHubReleases, error) {
 func (g *GitHubReleases) Name() string { return g.name }
 
 func (g *GitHubReleases) token() string {
+	// 1. Explicit env var from config
 	if g.tokenEnv != "" {
-		return os.Getenv(g.tokenEnv)
+		if tok := os.Getenv(g.tokenEnv); tok != "" {
+			return tok
+		}
+	}
+	// 2. Standard GITHUB_TOKEN env var
+	if tok := os.Getenv("GITHUB_TOKEN"); tok != "" {
+		return tok
+	}
+	// 3. Auto-detect from gh CLI (if installed)
+	if tok := ghAuthToken(); tok != "" {
+		return tok
 	}
 	return ""
 }
@@ -438,4 +450,14 @@ func (g *GitHubReleases) deleteAsset(releaseID int, name string) {
 			return
 		}
 	}
+}
+
+// ghAuthToken runs `gh auth token` to get a GitHub token from the gh CLI.
+// Returns empty string if gh is not installed or not authenticated.
+func ghAuthToken() string {
+	out, err := exec.Command("gh", "auth", "token").Output()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(string(out))
 }
