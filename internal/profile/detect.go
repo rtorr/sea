@@ -82,12 +82,27 @@ func normalizeArch(goarch string) string {
 }
 
 func detectCompiler(p *Profile) {
-	// Try gcc first, then clang, then MSVC
+	// On Windows, prefer MSVC detection first since cmake defaults to it.
+	// Don't set CC/CXX env vars — let cmake auto-detect the compiler.
+	// The profile records which compiler was found (for ABI tags), but
+	// doesn't force it via environment variables.
+	if runtime.GOOS == "windows" {
+		if ver, ok := compilerVersion("cl.exe", ""); ok {
+			p.Compiler = "msvc"
+			p.CompilerVersion = msvcToolset(ver)
+			p.CppStdlib = "msvc"
+			return
+		}
+	}
+
 	if ver, ok := compilerVersion("gcc", "-dumpversion"); ok {
 		p.Compiler = "gcc"
 		p.CompilerVersion = majorVersion(ver)
-		p.Env["CC"] = "gcc"
-		p.Env["CXX"] = "g++"
+		// Only set CC/CXX on non-Windows (on Windows, cmake should auto-detect)
+		if runtime.GOOS != "windows" {
+			p.Env["CC"] = "gcc"
+			p.Env["CXX"] = "g++"
+		}
 		return
 	}
 
@@ -95,19 +110,22 @@ func detectCompiler(p *Profile) {
 		p.Compiler = "clang"
 		p.CompilerVersion = majorVersion(ver)
 		p.CppStdlib = "libc++"
-		p.Env["CC"] = "clang"
-		p.Env["CXX"] = "clang++"
+		if runtime.GOOS != "windows" {
+			p.Env["CC"] = "clang"
+			p.Env["CXX"] = "clang++"
+		}
 		return
 	}
 
-	if ver, ok := compilerVersion("cl.exe", ""); ok {
-		p.Compiler = "msvc"
-		p.CompilerVersion = msvcToolset(ver)
-		p.CppStdlib = "msvc"
-		return
+	if runtime.GOOS != "windows" {
+		if ver, ok := compilerVersion("cl.exe", ""); ok {
+			p.Compiler = "msvc"
+			p.CompilerVersion = msvcToolset(ver)
+			p.CppStdlib = "msvc"
+			return
+		}
 	}
 
-	// Fallback
 	p.Compiler = "unknown"
 	p.CompilerVersion = "0"
 }
