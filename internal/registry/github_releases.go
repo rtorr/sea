@@ -379,11 +379,36 @@ func (g *GitHubReleases) getOrCreateRelease(tag, title string) (int, error) {
 }
 
 func (g *GitHubReleases) uploadAsset(releaseID int, name string, data []byte) error {
-	url := fmt.Sprintf("https://uploads.github.com/repos/%s/%s/releases/%d/assets?name=%s",
-		g.owner, g.repo, releaseID, name)
-	req, err := http.NewRequest("POST", url, bytes.NewReader(data))
+	resp, err := g.doUploadAsset(releaseID, name, data)
 	if err != nil {
 		return err
+	}
+	defer resp.Body.Close()
+
+	// If asset already exists (422), delete it and retry
+	if resp.StatusCode == 422 {
+		resp.Body.Close()
+		g.deleteAsset(releaseID, name)
+		resp, err = g.doUploadAsset(releaseID, name, data)
+		if err != nil {
+			return err
+		}
+		defer resp.Body.Close()
+	}
+
+	if resp.StatusCode != http.StatusCreated {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("uploading asset %s: HTTP %d: %s", name, resp.StatusCode, string(respBody))
+	}
+	return nil
+}
+
+func (g *GitHubReleases) doUploadAsset(releaseID int, name string, data []byte) (*http.Response, error) {
+	uploadURL := fmt.Sprintf("https://uploads.github.com/repos/%s/%s/releases/%d/assets?name=%s",
+		g.owner, g.repo, releaseID, name)
+	req, err := http.NewRequest("POST", uploadURL, bytes.NewReader(data))
+	if err != nil {
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/octet-stream")
 	req.Header.Set("User-Agent", "sea/0.1")
@@ -391,18 +416,7 @@ func (g *GitHubReleases) uploadAsset(releaseID int, name string, data []byte) er
 		req.Header.Set("Authorization", "Bearer "+tok)
 	}
 	req.ContentLength = int64(len(data))
-
-	resp, err := g.client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusCreated {
-		respBody, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("uploading asset %s: HTTP %d: %s", name, resp.StatusCode, string(respBody))
-	}
-	return nil
+	return g.client.Do(req)
 }
 
 func (g *GitHubReleases) deleteAsset(releaseID int, name string) {
