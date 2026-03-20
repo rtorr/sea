@@ -44,12 +44,20 @@ func New(m *manifest.Manifest, prof *profile.Profile, projectDir string) (*Build
 }
 
 // Build runs the build and produces output in the install directory.
-// If [build].script is set, it runs the script. Otherwise, it auto-detects
-// the build system (CMake, Makefile, Meson, Autotools) and runs it directly.
+//
+// Resolution order:
+//  1. If [build].script is set → run the script
+//  2. If [build.source].url is set → download source, auto-detect build system, build
+//  3. Auto-detect build system in the project directory
 func (b *Builder) Build() (string, error) {
 	installDir := filepath.Join(b.ProjectDir, "sea_build", b.Profile.ABITag())
 	if err := os.MkdirAll(installDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating build output directory: %w", err)
+	}
+
+	// If source URL is specified, download and build from source
+	if b.Manifest.Build.Source.URL != "" {
+		return b.buildFromSourceURL(installDir)
 	}
 
 	system := DetectBuildSystem(b.ProjectDir, b.Manifest.Build.Script)
@@ -108,6 +116,86 @@ func (b *Builder) Build() (string, error) {
 			}
 			cancel()
 		}
+	}
+
+	return installDir, nil
+}
+
+// buildFromSourceURL downloads source from [build.source].url and builds it.
+func (b *Builder) buildFromSourceURL(installDir string) (string, error) {
+	srcCacheDir := filepath.Join(b.ProjectDir, "_src")
+
+	// Check if already downloaded
+	srcDir := filepath.Join(srcCacheDir, "src")
+	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+		if b.Verbose {
+			fmt.Printf("Downloading source from %s\n", b.Manifest.Build.Source.URL)
+		}
+		var downloadErr error
+		srcDir, downloadErr = DownloadSource(b.Manifest.Build.Source, srcCacheDir)
+		if downloadErr != nil {
+			return "", fmt.Errorf("downloading source: %w", downloadErr)
+		}
+	}
+
+	// If subdir is specified, the build system files are in a subdirectory
+	buildDir := srcDir
+	if b.Manifest.Build.Subdir != "" {
+		buildDir = filepath.Join(srcDir, b.Manifest.Build.Subdir)
+	}
+
+	// Detect build system in the source directory
+	system := DetectBuildSystem(buildDir, "")
+	if system == BuildUnknown {
+		return "", fmt.Errorf("cannot auto-detect build system in downloaded source (looked in %s for CMakeLists.txt, Makefile, meson.build)", buildDir)
+	}
+
+	if b.Verbose {
+		fmt.Printf("Detected build system: %s (in %s)\n", system, buildDir)
+	}
+
+	cc := envOrDefault(b.Profile.Env, "CC", "")
+	cxx := envOrDefault(b.Profile.Env, "CXX", "")
+	cflags := b.Profile.CFlags
+	cxxflags := b.Profile.CXXFlags
+
+	commands, err := GenerateBuildCommands(system, buildDir, installDir, cc, cxx, cflags, cxxflags)
+	if err != nil {
+		return "", err
+	}
+
+	// Inject extra cmake args if any
+	if system == BuildCMake && len(b.Manifest.Build.CMakeArgs) > 0 {
+		if len(commands) > 0 {
+			commands[0] = append(commands[0], b.Manifest.Build.CMakeArgs...)
+		}
+	}
+
+	// Add CMAKE_POLICY_VERSION_MINIMUM for modern cmake compat
+	if system == BuildCMake && len(commands) > 0 {
+		commands[0] = append(commands[0], "-DCMAKE_POLICY_VERSION_MINIMUM=3.5")
+	}
+
+	env := BuildEnv(b.Manifest, b.Profile, srcDir, installDir)
+
+	for _, argv := range commands {
+		if b.Verbose {
+			fmt.Printf("  $ %s\n", strings.Join(argv, " "))
+		}
+		ctx, cancel := context.WithTimeout(context.Background(), buildScriptTimeout)
+		cmd := exec.CommandContext(ctx, argv[0], argv[1:]...)
+		cmd.Dir = buildDir
+		cmd.Env = env
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		if err := cmd.Run(); err != nil {
+			cancel()
+			if ctx.Err() == context.DeadlineExceeded {
+				return "", fmt.Errorf("build timed out after 30 minutes")
+			}
+			return "", fmt.Errorf("build command failed: %s: %w", strings.Join(argv, " "), err)
+		}
+		cancel()
 	}
 
 	return installDir, nil

@@ -78,6 +78,7 @@ func GenerateBuildCommands(system BuildSystem, projectDir, installDir, cc, cxx, 
 			"-DCMAKE_BUILD_TYPE=Release",
 			"-DBUILD_SHARED_LIBS=ON",
 		}
+		// Only set compiler if explicitly configured — let CMake auto-detect on Windows/MSVC
 		if cc != "" {
 			cmakeArgs = append(cmakeArgs, "-DCMAKE_C_COMPILER="+cc)
 		}
@@ -86,8 +87,8 @@ func GenerateBuildCommands(system BuildSystem, projectDir, installDir, cc, cxx, 
 		}
 		return [][]string{
 			cmakeArgs,
-			{"cmake", "--build", buildDir, "-j"},
-			{"cmake", "--install", buildDir},
+			{"cmake", "--build", buildDir, "--config", "Release", "-j"},
+			{"cmake", "--install", buildDir, "--config", "Release"},
 		}, nil
 
 	case BuildMakefile:

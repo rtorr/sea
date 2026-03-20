@@ -34,8 +34,12 @@ var buildCmd = &cobra.Command{
 			return nil
 		}
 
-		if m.Build.Script == "" {
-			return fmt.Errorf("no build.script defined in sea.toml — cannot build")
+		if m.Build.Script == "" && m.Build.Source.URL == "" {
+			// Check if the project directory has a recognizable build system
+			system := builder.DetectBuildSystem(dir, "")
+			if system == builder.BuildUnknown {
+				return fmt.Errorf("cannot build: no [build].script, no [build.source].url, and no recognized build system (CMakeLists.txt, Makefile, meson.build)")
+			}
 		}
 
 		cfg, err := config.Load()

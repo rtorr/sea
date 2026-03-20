@@ -49,6 +49,15 @@ type Build struct {
 	Script     string            `toml:"script,omitempty"`
 	Visibility string            `toml:"visibility,omitempty"` // "hidden" | "default"
 	Env        map[string]string `toml:"env,omitempty"`
+	Source     BuildSource       `toml:"source,omitempty"`
+
+	// CMakeArgs are extra CMake arguments passed when auto-detecting CMake.
+	// e.g. ["-DENABLE_TESTS=OFF", "-DCMAKE_CXX_STANDARD=17"]
+	CMakeArgs []string `toml:"cmake_args,omitempty"`
+
+	// Subdir is a subdirectory within the source archive that contains the
+	// build system files. e.g. "build/cmake" for lz4.
+	Subdir string `toml:"subdir,omitempty"`
 
 	// Test is a C/C++ source file that sea compiles against the build output,
 	// links, and executes after every build. If it compiles, links, and exits 0,
@@ -72,6 +81,21 @@ type ProfileRef struct {
 type Publish struct {
 	Registry string   `toml:"registry,omitempty"`
 	Include  []string `toml:"include,omitempty"`
+}
+
+// BuildSource specifies where to download the upstream source code.
+// When set, sea downloads and extracts the source automatically — no build.sh needed.
+type BuildSource struct {
+	// URL is the download URL for the source archive (.tar.gz, .tar.xz, .zip).
+	URL string `toml:"url,omitempty"`
+
+	// Strip is the number of leading path components to strip when extracting
+	// (like tar --strip-components). Default 1 (strips the top-level directory
+	// that most GitHub tarballs have).
+	Strip int `toml:"strip,omitempty"`
+
+	// SHA256 is the expected hash of the downloaded archive for integrity verification.
+	SHA256 string `toml:"sha256,omitempty"`
 }
 
 // ValidKinds lists all valid package kinds.
