@@ -227,6 +227,25 @@ func versionLess(a, b string) bool {
 	return false
 }
 
+// ListABITagsFromAny returns all ABI tags for a package version across all registries.
+func (m *Multi) ListABITagsFromAny(pkg, version string) ([]string, error) {
+	var all []string
+	seen := make(map[string]bool)
+	for _, r := range m.registries {
+		tags, err := r.ListABITags(pkg, version)
+		if err != nil {
+			continue
+		}
+		for _, t := range tags {
+			if !seen[t] {
+				seen[t] = true
+				all = append(all, t)
+			}
+		}
+	}
+	return all, nil
+}
+
 func splitVersion(v string) [3]int {
 	var parts [3]int
 	fmt.Sscanf(v, "%d.%d.%d", &parts[0], &parts[1], &parts[2])
