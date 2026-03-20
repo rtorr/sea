@@ -55,9 +55,25 @@ func (b *Builder) Build() (string, error) {
 		return "", fmt.Errorf("creating build output directory: %w", err)
 	}
 
-	// If source URL is specified, download and build from source
+	// If source URL is specified, download the source first
 	if b.Manifest.Build.Source.URL != "" {
-		return b.buildFromSourceURL(installDir)
+		// If there's also an explicit script, download source then run the script
+		// (the script has access to the source via _src/src/)
+		if b.Manifest.Build.Script != "" {
+			srcCacheDir := filepath.Join(b.ProjectDir, "_src")
+			srcDir := filepath.Join(srcCacheDir, "src")
+			if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+				if b.Verbose {
+					fmt.Printf("Downloading source from %s\n", b.Manifest.Build.Source.URL)
+				}
+				if _, downloadErr := DownloadSource(b.Manifest.Build.Source, srcCacheDir); downloadErr != nil {
+					return "", fmt.Errorf("downloading source: %w", downloadErr)
+				}
+			}
+			// Fall through to script execution below
+		} else {
+			return b.buildFromSourceURL(installDir)
+		}
 	}
 
 	system := DetectBuildSystem(b.ProjectDir, b.Manifest.Build.Script)
