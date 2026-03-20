@@ -51,9 +51,14 @@ func TestBuildMissingScript_ClearError(t *testing.T) {
 }
 
 func TestBuildScriptTimeout(t *testing.T) {
-	dir := t.TempDir()
+	// Use os.MkdirTemp instead of t.TempDir() because on Windows,
+	// the killed process may hold file handles, preventing cleanup.
+	dir, err := os.MkdirTemp("", "sea-timeout-test-*")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer os.RemoveAll(dir) // best-effort cleanup
 
-	// Create a platform-appropriate sleep script
 	var scriptPath string
 	if runtime.GOOS == "windows" {
 		scriptPath = filepath.Join(dir, "slow.bat")
@@ -69,8 +74,8 @@ func TestBuildScriptTimeout(t *testing.T) {
 	cmd := exec.CommandContext(ctx, scriptPath)
 	cmd.Dir = dir
 
-	err := cmd.Run()
-	if err == nil {
+	runErr := cmd.Run()
+	if runErr == nil {
 		t.Fatal("expected timeout error")
 	}
 
