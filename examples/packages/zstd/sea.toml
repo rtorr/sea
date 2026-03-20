@@ -1,0 +1,8 @@
+[package]
+name = "zstd"
+version = "1.5.0"
+kind = "source"
+
+[publish]
+registry = "sea-packages"
+include = ["include/**", "lib/**", "bin/**", "share/**", "LICENSE", "COPYING"]

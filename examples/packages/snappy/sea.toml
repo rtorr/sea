@@ -1,0 +1,8 @@
+[package]
+name = "snappy"
+version = "1.2.0"
+kind = "source"
+
+[publish]
+registry = "sea-packages"
+include = ["include/**", "lib/**", "bin/**", "share/**", "LICENSE", "COPYING"]

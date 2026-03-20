@@ -197,9 +197,10 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		// Check if lockfile already has this exact package and it's cached
 		if existingLock != nil {
 			if locked := existingLock.Find(pkg.Name); locked != nil {
-				if locked.Version == verStr && locked.ABI == abiTag && c.Has(pkg.Name, verStr, abiTag) {
+				lockedABI := locked.ABI
+				if locked.Version == verStr && profile.AreCompatible(lockedABI, abiTag, compatRules) && c.Has(pkg.Name, verStr, lockedABI) {
 					// Verify hash integrity
-					ok, err := c.VerifyHash(pkg.Name, verStr, abiTag, locked.SHA256)
+					ok, err := c.VerifyHash(pkg.Name, verStr, lockedABI, locked.SHA256)
 					if err == nil && ok {
 						if verbose {
 							cmd.Printf("  %s@%s — cached (verified)\n", pkg.Name, verStr)
@@ -727,7 +728,7 @@ func lockfileInSync(m *manifest.Manifest, lf *lockfile.LockFile, abiTag string) 
 		if locked == nil {
 			return false // dep not in lockfile
 		}
-		if locked.ABI != abiTag {
+		if !profile.AreCompatible(locked.ABI, abiTag, nil) {
 			return false // ABI changed (e.g. different profile)
 		}
 		// Check that locked version still satisfies the constraint

@@ -1,0 +1,11 @@
+[package]
+name = "glog"
+version = "0.7.0"
+kind = "source"
+
+[dependencies]
+gflags = "^2.2.0"
+
+[publish]
+registry = "sea-packages"
+include = ["include/**", "lib/**", "bin/**", "share/**", "LICENSE", "COPYING"]

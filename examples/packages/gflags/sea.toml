@@ -1,0 +1,8 @@
+[package]
+name = "gflags"
+version = "2.2.0"
+kind = "source"
+
+[publish]
+registry = "sea-packages"
+include = ["include/**", "lib/**", "bin/**", "share/**", "LICENSE", "COPYING"]

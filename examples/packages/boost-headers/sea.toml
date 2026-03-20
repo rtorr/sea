@@ -1,0 +1,8 @@
+[package]
+name = "boost-headers"
+version = "1.87.0"
+kind = "header-only"
+
+[publish]
+registry = "sea-packages"
+include = ["include/**", "lib/**", "bin/**", "share/**", "LICENSE", "COPYING"]
