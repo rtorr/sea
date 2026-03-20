@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 )
 
 // BuildSystem identifies how to build a project.
@@ -67,7 +68,9 @@ func DetectBuildSystem(projectDir, manifestScript string) BuildSystem {
 
 // GenerateBuildCommands returns the shell commands to build and install
 // for a detected build system. installDir is the target prefix.
-func GenerateBuildCommands(system BuildSystem, projectDir, installDir, cc, cxx, cflags, cxxflags string) ([][]string, error) {
+// seaPackagesDir, if non-empty, is added to CMAKE_PREFIX_PATH so cmake
+// can find dependencies installed by sea.
+func GenerateBuildCommands(system BuildSystem, projectDir, installDir, cc, cxx, cflags, cxxflags string, seaPackagesDirs ...string) ([][]string, error) {
 	switch system {
 	case BuildCMake:
 		buildDir := filepath.Join(projectDir, "_sea_build")
@@ -84,6 +87,28 @@ func GenerateBuildCommands(system BuildSystem, projectDir, installDir, cc, cxx, 
 		}
 		if cxx != "" {
 			cmakeArgs = append(cmakeArgs, "-DCMAKE_CXX_COMPILER="+cxx)
+		}
+		// Add sea_packages directories to CMAKE_PREFIX_PATH so deps are found
+		if len(seaPackagesDirs) > 0 {
+			var prefixPaths []string
+			for _, dir := range seaPackagesDirs {
+				if dir == "" {
+					continue
+				}
+				// Add each installed package's root as a prefix path
+				entries, err := os.ReadDir(dir)
+				if err == nil {
+					for _, e := range entries {
+						pkgPath := filepath.Join(dir, e.Name())
+						if fi, err := os.Stat(pkgPath); err == nil && fi.IsDir() {
+							prefixPaths = append(prefixPaths, pkgPath)
+						}
+					}
+				}
+			}
+			if len(prefixPaths) > 0 {
+				cmakeArgs = append(cmakeArgs, "-DCMAKE_PREFIX_PATH="+strings.Join(prefixPaths, ";"))
+			}
 		}
 		return [][]string{
 			cmakeArgs,

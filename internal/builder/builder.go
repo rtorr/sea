@@ -90,7 +90,9 @@ func (b *Builder) Build() (string, error) {
 		cflags := b.Profile.CFlags
 		cxxflags := b.Profile.CXXFlags
 
-		commands, err := GenerateBuildCommands(system, b.ProjectDir, installDir, cc, cxx, cflags, cxxflags)
+		seaPkgDir := filepath.Join(b.ProjectDir, "sea_packages")
+		seaBuildPkgDir := filepath.Join(b.ProjectDir, "sea_build_packages")
+		commands, err := GenerateBuildCommands(system, b.ProjectDir, installDir, cc, cxx, cflags, cxxflags, seaPkgDir, seaBuildPkgDir)
 		if err != nil {
 			return "", err
 		}
@@ -159,7 +161,9 @@ func (b *Builder) buildFromSourceURL(installDir string) (string, error) {
 	cflags := b.Profile.CFlags
 	cxxflags := b.Profile.CXXFlags
 
-	commands, err := GenerateBuildCommands(system, buildDir, installDir, cc, cxx, cflags, cxxflags)
+	seaPkgDir := filepath.Join(b.ProjectDir, "sea_packages")
+	seaBuildPkgDir := filepath.Join(b.ProjectDir, "sea_build_packages")
+	commands, err := GenerateBuildCommands(system, buildDir, installDir, cc, cxx, cflags, cxxflags, seaPkgDir, seaBuildPkgDir)
 	if err != nil {
 		return "", err
 	}
