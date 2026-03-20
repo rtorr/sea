@@ -441,6 +441,10 @@ func linkPackage(c *cache.Cache, seaPkgDir, name, version, abiTag, linking strin
 		}
 	}
 
+	// Relocate cmake config files to use relative paths
+	// (cmake installs write absolute paths that break when moved)
+	integrate.RelocateCMakeConfigs(pkgInstallDir)
+
 	// Auto-generate a .pc file if the package doesn't already have one
 	pcDir := filepath.Join(pkgInstallDir, "lib", "pkgconfig")
 	if entries, err := os.ReadDir(pcDir); err != nil || len(entries) == 0 {

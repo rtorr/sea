@@ -85,8 +85,10 @@ func (b *Builder) Build() (string, error) {
 			fmt.Printf("Detected build system: %s\n", system)
 		}
 
-		cc := envOrDefault(b.Profile.Env, "CC", "cc")
-		cxx := envOrDefault(b.Profile.Env, "CXX", "c++")
+		// Only pass compiler to cmake if explicitly set in the profile.
+		// Empty string lets cmake auto-detect (important for MSVC on Windows).
+		cc := envOrDefault(b.Profile.Env, "CC", "")
+		cxx := envOrDefault(b.Profile.Env, "CXX", "")
 		cflags := b.Profile.CFlags
 		cxxflags := b.Profile.CXXFlags
 
