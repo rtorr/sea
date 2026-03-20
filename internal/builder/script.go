@@ -33,10 +33,18 @@ func RunScript(scriptPath string, env []string, workDir string) error {
 	var cmd *exec.Cmd
 
 	if runtime.GOOS == "windows" {
-		// On Windows, use cmd.exe for .bat/.cmd, otherwise try running directly
 		ext := filepath.Ext(absScript)
 		if ext == ".bat" || ext == ".cmd" {
 			cmd = exec.CommandContext(ctx, "cmd", "/c", absScript)
+		} else if ext == ".sh" {
+			// Run shell scripts through bash on Windows (Git Bash)
+			bashPath, lookErr := exec.LookPath("bash")
+			if lookErr != nil {
+				return fmt.Errorf("cannot run %s on Windows: bash not found (install Git for Windows)", scriptPath)
+			}
+			cmd = exec.CommandContext(ctx, bashPath, absScript)
+		} else if ext == ".ps1" {
+			cmd = exec.CommandContext(ctx, "powershell", "-ExecutionPolicy", "Bypass", "-File", absScript)
 		} else {
 			cmd = exec.CommandContext(ctx, absScript)
 		}
