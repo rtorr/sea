@@ -1,8 +1,0 @@
-[package]
-name = "libevent"
-version = "2.1.0"
-kind = "source"
-
-[publish]
-registry = "sea-packages"
-include = ["include/**", "lib/**", "bin/**", "share/**", "LICENSE", "COPYING"]
