@@ -2,6 +2,7 @@ package builder
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -17,6 +18,15 @@ func newTestProfile() *profile.Profile {
 		Compiler: "gcc", CompilerVersion: "13",
 		Env: make(map[string]string),
 	}
+}
+
+func hasCCompiler() bool {
+	for _, cc := range []string{"cc", "gcc", "clang", "cl.exe"} {
+		if _, err := exec.LookPath(cc); err == nil {
+			return true
+		}
+	}
+	return false
 }
 
 func TestVerifyPassesWithHeadersAndStaticLib(t *testing.T) {
@@ -66,8 +76,8 @@ func TestVerifyFailsNoLibs(t *testing.T) {
 }
 
 func TestVerifyOptionalTestProgram(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("test program compilation not tested on Windows")
+	if !hasCCompiler() {
+		t.Skip("no C compiler available")
 	}
 
 	dir := t.TempDir()

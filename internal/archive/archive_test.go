@@ -97,7 +97,9 @@ func TestPackWithIncludePatterns(t *testing.T) {
 }
 
 func TestPackSourceDirNotFound(t *testing.T) {
-	err := Pack("/nonexistent", nil, "/tmp/test.tar.zst")
+	nonexistent := filepath.Join(t.TempDir(), "does-not-exist")
+	dest := filepath.Join(t.TempDir(), "test.tar.zst")
+	err := Pack(nonexistent, nil, dest)
 	if err == nil {
 		t.Error("expected error for nonexistent source dir")
 	}

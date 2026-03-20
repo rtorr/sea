@@ -17,12 +17,17 @@ import (
 func TestBuildMissingScript_ClearError(t *testing.T) {
 	dir := t.TempDir()
 
+	scriptName := "nonexistent-build.sh"
+	if runtime.GOOS == "windows" {
+		scriptName = "nonexistent-build.bat"
+	}
+
 	m := &manifest.Manifest{
 		Package: manifest.Package{Name: "test", Version: "1.0.0"},
-		Build:   manifest.Build{Script: "nonexistent-build.sh"},
+		Build:   manifest.Build{Script: scriptName},
 	}
 	prof := &profile.Profile{
-		OS: "linux", Arch: "x86_64",
+		OS: runtime.GOOS, Arch: "x86_64",
 		Compiler: "gcc", CompilerVersion: "13",
 		Env: make(map[string]string),
 	}
@@ -37,8 +42,7 @@ func TestBuildMissingScript_ClearError(t *testing.T) {
 		t.Fatal("expected error for missing build script")
 	}
 
-	// Error should clearly mention the script name
-	if !strings.Contains(err.Error(), "nonexistent-build.sh") {
+	if !strings.Contains(err.Error(), scriptName) {
 		t.Errorf("error should mention the script name, got: %v", err)
 	}
 	if !strings.Contains(err.Error(), "not found") {
@@ -47,20 +51,18 @@ func TestBuildMissingScript_ClearError(t *testing.T) {
 }
 
 func TestBuildScriptTimeout(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("shell scripts not supported on Windows")
-	}
-
 	dir := t.TempDir()
 
-	// Create a script that sleeps indefinitely
-	scriptContent := "#!/bin/sh\nsleep 999\n"
-	scriptPath := filepath.Join(dir, "slow-build.sh")
-	if err := os.WriteFile(scriptPath, []byte(scriptContent), 0o755); err != nil {
-		t.Fatalf("writing script: %v", err)
+	// Create a platform-appropriate sleep script
+	var scriptPath string
+	if runtime.GOOS == "windows" {
+		scriptPath = filepath.Join(dir, "slow.bat")
+		os.WriteFile(scriptPath, []byte("@echo off\r\nping -n 999 127.0.0.1 >nul\r\n"), 0o644)
+	} else {
+		scriptPath = filepath.Join(dir, "slow.sh")
+		os.WriteFile(scriptPath, []byte("#!/bin/sh\nsleep 999\n"), 0o755)
 	}
 
-	// Run the script directly with a short timeout to verify timeout behavior
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
@@ -72,7 +74,6 @@ func TestBuildScriptTimeout(t *testing.T) {
 		t.Fatal("expected timeout error")
 	}
 
-	// The context should have been exceeded
 	if ctx.Err() != context.DeadlineExceeded {
 		t.Errorf("expected deadline exceeded, got: %v", ctx.Err())
 	}

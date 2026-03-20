@@ -102,13 +102,14 @@ func TestLoadNonExistent(t *testing.T) {
 
 func TestSeaDir(t *testing.T) {
 	// Test with SEA_HOME override
-	t.Setenv("SEA_HOME", "/tmp/test-sea")
+	testDir := filepath.Join(t.TempDir(), "test-sea")
+	t.Setenv("SEA_HOME", testDir)
 	dir, err := SeaDir()
 	if err != nil {
 		t.Fatalf("SeaDir: %v", err)
 	}
-	if dir != "/tmp/test-sea" {
-		t.Errorf("expected /tmp/test-sea, got %s", dir)
+	if dir != testDir {
+		t.Errorf("expected %s, got %s", testDir, dir)
 	}
 
 	// Test default
