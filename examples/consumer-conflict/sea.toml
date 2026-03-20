@@ -1,0 +1,9 @@
+[package]
+name = "conflict-app"
+version = "1.0.0"
+kind = "source"
+
+# These two ranges have NO overlap → should fail with a clear conflict error
+[dependencies]
+cjson = { version = ">=2.0.0" }
+lz4 = { version = ">=99.0.0" }

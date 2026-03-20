@@ -1,0 +1,13 @@
+[package]
+name = "xxhash"
+version = "0.8.0"
+kind = "source"
+description = "Extremely fast non-cryptographic hash algorithm"
+license = "BSD-2-Clause"
+
+[build]
+script = "build.sh"
+
+[publish]
+registry = "sea-packages"
+include = ["include/**", "lib/**"]

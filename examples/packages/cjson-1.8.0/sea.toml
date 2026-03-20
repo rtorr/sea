@@ -1,0 +1,12 @@
+[package]
+name = "cjson"
+version = "1.8.0"
+kind = "source"
+description = "Ultralightweight JSON parser in ANSI C — with sea extensions"
+
+[build]
+script = "build.sh"
+
+[publish]
+registry = "test-local"
+include = ["include/**", "lib/**"]

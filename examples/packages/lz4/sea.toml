@@ -1,0 +1,12 @@
+[package]
+name = "lz4"
+version = "1.10.0"
+kind = "source"
+description = "Extremely fast compression algorithm"
+
+[build]
+script = "build.sh"
+
+[publish]
+registry = "test-local"
+include = ["include/**", "lib/**"]

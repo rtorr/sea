@@ -1,0 +1,9 @@
+[package]
+name = "my-app"
+version = "1.0.0"
+kind = "source"
+
+[dependencies]
+cjson = { version = "^1.7.0" }
+lz4 = { version = "^1.0.0" }
+fmt = { version = "^11.0.0" }

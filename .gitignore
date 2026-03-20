@@ -1,0 +1,10 @@
+bin/
+dist/
+*.tar.zst
+sea_packages/
+sea_build/
+sea_build_packages/
+_src/
+sea.lock
+.sea-linking
+.DS_Store

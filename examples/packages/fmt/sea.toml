@@ -1,0 +1,12 @@
+[package]
+name = "fmt"
+version = "11.1.0"
+kind = "source"
+description = "A modern formatting library for C++"
+
+[build]
+script = "build.sh"
+
+[publish]
+registry = "test-local"
+include = ["include/**", "lib/**"]

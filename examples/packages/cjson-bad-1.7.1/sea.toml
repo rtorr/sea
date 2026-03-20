@@ -1,0 +1,12 @@
+[package]
+name = "cjson"
+version = "1.7.1"
+kind = "source"
+description = "BAD: removes cJSON_Compare but only bumps patch"
+
+[build]
+script = "build.sh"
+
+[publish]
+registry = "test-local"
+include = ["include/**", "lib/**"]

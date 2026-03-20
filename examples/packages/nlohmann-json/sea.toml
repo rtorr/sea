@@ -1,0 +1,13 @@
+[package]
+name = "nlohmann-json"
+version = "3.11.0"
+kind = "header-only"
+description = "JSON for Modern C++ — header-only"
+license = "MIT"
+
+[build]
+script = "build.sh"
+
+[publish]
+registry = "sea-packages"
+include = ["include/**"]

@@ -1,0 +1,8 @@
+[package]
+name = "pinned-app"
+version = "1.0.0"
+kind = "source"
+
+# Pins cjson to exactly 1.7.0 — should NOT get 1.8.0
+[dependencies]
+cjson = { version = "=1.7.0" }
