@@ -87,10 +87,21 @@ func runPublish(cmd *cobra.Command, args []string) error {
 	compatRules := loadCompatRules(cfg)
 	multi.SetCompatRules(compatRules)
 
-	// Determine source directory: built output or project root
-	srcDir := filepath.Join(dir, "sea_build", abiTag)
+	// Determine source directory: built output or project root.
+	// For header-only packages, the build output uses the host ABI tag
+	// (not "any") since that's what the builder creates. The publish
+	// ABI tag is "any" but the build directory uses the host tag.
+	buildABI := abiTag
+	if m.EffectiveKind() == "header-only" {
+		buildABI = prof.ABITag()
+	}
+	srcDir := filepath.Join(dir, "sea_build", buildABI)
 	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
-		srcDir = dir
+		// Also try the publish ABI tag (in case someone manually built for "any")
+		srcDir = filepath.Join(dir, "sea_build", abiTag)
+		if _, err := os.Stat(srcDir); os.IsNotExist(err) {
+			srcDir = dir
+		}
 	}
 
 	// Create archive in temp directory

@@ -240,15 +240,19 @@ func runInstall(cmd *cobra.Command, args []string) error {
 				Deps:     formatDeps(pkg.Deps, resolved),
 			}
 		} else {
-			// Package is cached but not from the lockfile — compute its hash
+			// Package is cached — determine which ABI tag it's under
+			cachedABI := abiTag
+			if c.Has(pkg.Name, verStr, "any") && !c.Has(pkg.Name, verStr, abiTag) {
+				cachedABI = "any"
+			}
 			sha := ""
-			if ok, computedHash := computeCachedHash(c, pkg.Name, verStr, abiTag); ok {
+			if ok, computedHash := computeCachedHash(c, pkg.Name, verStr, cachedABI); ok {
 				sha = computedHash
 			}
 			lockEntry = lockfile.LockedPackage{
 				Name:    pkg.Name,
 				Version: verStr,
-				ABI:     abiTag,
+				ABI:     cachedABI,
 				SHA256:  sha,
 				Deps:    formatDeps(pkg.Deps, resolved),
 			}
