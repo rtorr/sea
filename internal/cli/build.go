@@ -29,8 +29,8 @@ var buildCmd = &cobra.Command{
 			return fmt.Errorf("loading manifest: %w", err)
 		}
 
-		if m.EffectiveKind() == "header-only" && m.Build.Script == "" {
-			cmd.Println("Package is header-only with no build script — nothing to build.")
+		if m.EffectiveKind() == "header-only" && m.Build.Script == "" && m.Build.Source.URL == "" {
+			cmd.Println("Package is header-only with no build script or source URL — nothing to build.")
 			return nil
 		}
 

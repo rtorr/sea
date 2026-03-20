@@ -145,6 +145,11 @@ func (b *Builder) buildFromSourceURL(installDir string) (string, error) {
 		}
 	}
 
+	// Header-only packages: just copy include/ from the source to install dir
+	if b.Manifest.EffectiveKind() == "header-only" {
+		return b.installHeaderOnly(srcDir, installDir)
+	}
+
 	// If subdir is specified, the build system files are in a subdirectory
 	buildDir := srcDir
 	if b.Manifest.Build.Subdir != "" {
@@ -205,6 +210,77 @@ func (b *Builder) buildFromSourceURL(installDir string) (string, error) {
 	}
 
 	return installDir, nil
+}
+
+// installHeaderOnly copies headers from a source directory to the install directory.
+// It looks for common header locations: include/, src/, or the root of the source.
+func (b *Builder) installHeaderOnly(srcDir, installDir string) (string, error) {
+	destInclude := filepath.Join(installDir, "include")
+	if err := os.MkdirAll(destInclude, 0o755); err != nil {
+		return "", err
+	}
+
+	// Try common header locations in order
+	for _, candidate := range []string{
+		filepath.Join(srcDir, "include"),
+		filepath.Join(srcDir, "single_include"), // nlohmann-json style
+		filepath.Join(srcDir, "src"),
+	} {
+		if fi, err := os.Stat(candidate); err == nil && fi.IsDir() {
+			if err := copyDirContents(candidate, destInclude); err != nil {
+				return "", fmt.Errorf("copying headers: %w", err)
+			}
+			return installDir, nil
+		}
+	}
+
+	// Fallback: look for any .h/.hpp files in the source root and subdirs
+	found := false
+	filepath.Walk(srcDir, func(path string, info os.FileInfo, err error) error {
+		if err != nil || info.IsDir() {
+			return nil
+		}
+		ext := filepath.Ext(info.Name())
+		if ext == ".h" || ext == ".hpp" || ext == ".hxx" {
+			found = true
+			rel, _ := filepath.Rel(srcDir, path)
+			dest := filepath.Join(destInclude, rel)
+			os.MkdirAll(filepath.Dir(dest), 0o755)
+			data, readErr := os.ReadFile(path)
+			if readErr == nil {
+				os.WriteFile(dest, data, 0o644)
+			}
+		}
+		return nil
+	})
+
+	if !found {
+		return "", fmt.Errorf("no header files found in downloaded source")
+	}
+
+	return installDir, nil
+}
+
+// copyDirContents copies all files and subdirectories from src into dest.
+func copyDirContents(src, dest string) error {
+	return filepath.Walk(src, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, relErr := filepath.Rel(src, path)
+		if relErr != nil {
+			return relErr
+		}
+		target := filepath.Join(dest, rel)
+		if info.IsDir() {
+			return os.MkdirAll(target, 0o755)
+		}
+		data, readErr := os.ReadFile(path)
+		if readErr != nil {
+			return readErr
+		}
+		return os.WriteFile(target, data, info.Mode())
+	})
 }
 
 func envOrDefault(env map[string]string, key, def string) string {
