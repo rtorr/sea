@@ -37,15 +37,9 @@ Examples:
 func init() {
 	installCmd.Flags().BoolVar(&lockedFlag, "locked", false, "install only what is in sea.lock, fail if lockfile is missing or incomplete")
 	installCmd.Flags().StringVar(&featuresFlag, "features", "", "comma-separated list of features to enable")
-	installCmd.Flags().Bool("update", false, "re-resolve to latest versions and pick up newest artifacts")
 }
 
 func runInstall(cmd *cobra.Command, args []string) error {
-	// --update: re-resolve to latest versions AND pick up newest artifacts
-	if update, _ := cmd.Flags().GetBool("update"); update {
-		return runUpdate(cmd, args)
-	}
-
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getting working directory: %w", err)
@@ -204,19 +198,29 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	for i, pkg := range resolved {
 		verStr := pkg.Version.String()
 
-		// Check if lockfile already has this package with a cached hash
+		// Check if lockfile has this package and the registry still has the same artifact.
+		// If the registry has a newer artifact (security fix, rebuild), we download it
+		// automatically — the version didn't change, so the lockfile should track
+		// the latest artifact.
 		if existingLock != nil {
 			if locked := existingLock.Find(pkg.Name); locked != nil {
 				if locked.Version == verStr && locked.SHA256 != "" && c.Has(locked.SHA256) {
-					if verbose {
-						cmd.Printf("  %s@%s — cached (%s)\n", pkg.Name, verStr, locked.SHA256[:12])
+					// Quick check: does the registry have a newer artifact?
+					currentHash := registryCurrentHash(multi, pkg.Name, verStr, locked.ABI)
+					if currentHash == "" || currentHash == locked.SHA256 {
+						// Registry matches or is unavailable — use cached
+						if verbose {
+							cmd.Printf("  %s@%s — cached (%s)\n", pkg.Name, verStr, locked.SHA256[:12])
+						}
+						cached[i] = cachedPkg{
+							pkg:       pkg,
+							verStr:    verStr,
+							lockEntry: *locked,
+						}
+						continue
 					}
-					cached[i] = cachedPkg{
-						pkg:       pkg,
-						verStr:    verStr,
-						lockEntry: *locked,
-					}
-					continue
+					// Registry has a newer artifact — download it
+					cmd.Printf("  %s@%s — newer artifact available, updating\n", pkg.Name, verStr)
 				}
 			}
 		}
@@ -314,33 +318,23 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	integrate.GenerateCMakeIntegration(seaPkgDir)
 
 	cmd.Printf("Installed %d package(s).\n", len(resolved))
+	return nil
+}
 
-	// ── Check for superseded artifacts ──
-	// Quick check: for each installed package, see if the registry has a
-	// newer artifact for the same version. Warns but doesn't block.
-	var stale int
-	for _, cp := range cached {
-		if cp.lockEntry.SHA256 == "" {
+// registryCurrentHash checks the registry for the current artifact hash
+// for a given package version and ABI tag. Returns empty string if unavailable.
+func registryCurrentHash(multi *registry.Multi, name, version, abiTag string) string {
+	for _, reg := range multi.Registries() {
+		vm, err := reg.FetchVersionManifest(name, version)
+		if err != nil || vm == nil {
 			continue
 		}
-		for _, reg := range multi.Registries() {
-			vm, err := reg.FetchVersionManifest(cp.pkg.Name, cp.verStr)
-			if err != nil || vm == nil {
-				continue
-			}
-			if replacement := vm.IsSuperseded(cp.lockEntry.SHA256); replacement != nil {
-				stale++
-			} else if current := vm.CurrentArtifact(cp.lockEntry.ABI); current != nil && current.SHA256 != "" && current.SHA256 != cp.lockEntry.SHA256 {
-				stale++
-			}
-			break
+		if current := vm.CurrentArtifact(abiTag); current != nil && current.SHA256 != "" {
+			return current.SHA256
 		}
+		break
 	}
-	if stale > 0 {
-		cmd.Printf("\n%d package(s) have newer artifacts available. Run 'sea audit' for details.\n", stale)
-	}
-
-	return nil
+	return ""
 }
 
 // runLockedInstall installs exactly what's in sea.lock without resolving.

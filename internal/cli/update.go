@@ -32,12 +32,6 @@ Examples:
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
-	// --refresh delegates to audit --fix (same-version artifact updates)
-	if refresh, _ := cmd.Flags().GetBool("refresh"); refresh {
-		auditFixFlag = true
-		return runAudit(cmd, args)
-	}
-
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getting working directory: %w", err)
