@@ -142,6 +142,26 @@ func runPublish(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("archive is empty — no files matched include patterns %v", includes)
 	}
 
+	// Validate: source packages must have library files in lib/
+	if m.EffectiveKind() == "source" {
+		hasLib := false
+		libDir := filepath.Join(srcDir, "lib")
+		if entries, scanErr := os.ReadDir(libDir); scanErr == nil {
+			for _, e := range entries {
+				name := e.Name()
+				if strings.HasSuffix(name, ".a") || strings.HasSuffix(name, ".so") ||
+					strings.HasSuffix(name, ".dylib") || strings.HasSuffix(name, ".lib") ||
+					strings.HasSuffix(name, ".dll") || strings.Contains(name, ".so.") {
+					hasLib = true
+					break
+				}
+			}
+		}
+		if !hasLib {
+			return fmt.Errorf("source package has no library files in lib/ — build may have failed silently.\nCheck that your build.sh copies libraries to $SEA_INSTALL_DIR/lib/")
+		}
+	}
+
 	// Extract symbols from libraries — track shared and static separately
 	var libs []archive.MetaLib
 	var allSymbols []abi.Symbol    // all symbols (for metadata)
