@@ -194,54 +194,23 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 			}
 		}
 
-		// Download if not cached
-		if !c.Has(pkg.Name, verStr, abiTag) {
-			reg, matchedTag, err := multi.FindRegistry(pkg.Name, verStr, abiTag)
-			if err != nil {
-				return fmt.Errorf("finding %s@%s: %w", pkg.Name, verStr, err)
-			}
-			rc, err := reg.Download(pkg.Name, verStr, matchedTag)
-			if err != nil {
-				return fmt.Errorf("downloading %s@%s: %w", pkg.Name, verStr, err)
-			}
-			sha, err := c.Store(pkg.Name, verStr, abiTag, rc)
-			rc.Close()
-			if err != nil {
-				return fmt.Errorf("caching %s@%s: %w", pkg.Name, verStr, err)
-			}
-			newLock.Packages = append(newLock.Packages, lockfile.LockedPackage{
-				Name:    pkg.Name,
-				Version: verStr,
-				ABI:     abiTag,
-				SHA256:  sha,
-				Deps:    formatDeps(pkg.Deps, resolved),
-			})
-		} else {
-			// Reuse existing lock entry if available, otherwise create minimal one
-			if existingLock != nil {
-				if locked := existingLock.Find(pkg.Name); locked != nil && locked.Version == verStr {
-					newLock.Packages = append(newLock.Packages, *locked)
-				} else {
-					newLock.Packages = append(newLock.Packages, lockfile.LockedPackage{
-						Name:    pkg.Name,
-						Version: verStr,
-						ABI:     abiTag,
-						Deps:    formatDeps(pkg.Deps, resolved),
-					})
-				}
-			} else {
-				newLock.Packages = append(newLock.Packages, lockfile.LockedPackage{
-					Name:    pkg.Name,
-					Version: verStr,
-					ABI:     abiTag,
-					Deps:    formatDeps(pkg.Deps, resolved),
-				})
-			}
+		// Download and cache
+		sha, _, effectiveABI, err := downloadOrBuild(cmd, multi, c, cfg, prof, pkg.Name, verStr, abiTag, dir)
+		if err != nil {
+			return fmt.Errorf("installing %s@%s: %w", pkg.Name, verStr, err)
 		}
 
-		// Link
+		newLock.Packages = append(newLock.Packages, lockfile.LockedPackage{
+			Name:        pkg.Name,
+			Version:     verStr,
+			ABI:         effectiveABI,
+			Fingerprint: prof.ABIFingerprintHash,
+			SHA256:      sha,
+			Deps:        formatDeps(pkg.Deps, resolved),
+		})
+
 		linkPref := depLinking(m, pkg.Name)
-		if err := linkPackage(c, seaPkgDir, pkg.Name, verStr, abiTag, linkPref); err != nil {
+		if err := linkPackage(c, seaPkgDir, pkg.Name, verStr, sha, linkPref); err != nil {
 			return err
 		}
 	}

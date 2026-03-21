@@ -153,30 +153,15 @@ func installBuildDeps(cmd *cobra.Command, dir string, m *manifest.Manifest, cfg 
 			targetDir = buildPkgDir
 		}
 
-		// Check cache, download if needed
-		effectiveABI := abiTag
-		if !c.Has(pkg.Name, verStr, abiTag) && !c.Has(pkg.Name, verStr, "any") {
-			cmd.Printf("  %s%s@%s (%s)...\n", label, pkg.Name, verStr, abiTag)
-			reg, matchedTag, err := multi.FindRegistry(pkg.Name, verStr, abiTag)
-			if err != nil {
-				return fmt.Errorf("finding %s@%s: %w", pkg.Name, verStr, err)
-			}
-			rc, err := reg.Download(pkg.Name, verStr, matchedTag)
-			if err != nil {
-				return fmt.Errorf("downloading %s@%s: %w", pkg.Name, verStr, err)
-			}
-			_, err = c.Store(pkg.Name, verStr, matchedTag, rc)
-			rc.Close()
-			if err != nil {
-				return fmt.Errorf("caching %s@%s: %w", pkg.Name, verStr, err)
-			}
-			effectiveABI = matchedTag
-		} else if c.Has(pkg.Name, verStr, "any") {
-			effectiveABI = "any"
+		// Download and cache
+		cmd.Printf("  %s%s@%s (%s)...\n", label, pkg.Name, verStr, abiTag)
+		sha, _, _, err := downloadOrBuild(cmd, multi, c, cfg, prof, pkg.Name, verStr, abiTag, dir)
+		if err != nil {
+			return fmt.Errorf("installing %s@%s: %w", pkg.Name, verStr, err)
 		}
 
 		linking := depLinking(m, pkg.Name)
-		if err := linkPackage(c, targetDir, pkg.Name, verStr, effectiveABI, linking); err != nil {
+		if err := linkPackage(c, targetDir, pkg.Name, verStr, sha, linking); err != nil {
 			return err
 		}
 	}

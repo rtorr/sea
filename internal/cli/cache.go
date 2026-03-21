@@ -69,13 +69,13 @@ var cacheListCmd = &cobra.Command{
 			return nil
 		}
 
-		cmd.Printf("Cached packages (%d):\n", len(packages))
+		cmd.Printf("Cached blobs (%d):\n", len(packages))
 		for _, p := range packages {
 			extracted := ""
 			if p.Extracted {
 				extracted = " (extracted)"
 			}
-			cmd.Printf("  %s@%s [%s] %s%s\n", p.Name, p.Version, p.ABI, formatBytes(p.Size), extracted)
+			cmd.Printf("  %s %s%s\n", p.SHA256[:16], formatBytes(p.Size), extracted)
 		}
 
 		total, _ := c.Size()
@@ -102,7 +102,7 @@ var cacheInfoCmd = &cobra.Command{
 		size, _ := c.Size()
 		cmd.Printf("Cache directory: %s\n", c.Layout.Root)
 		cmd.Printf("Cache size:      %s\n", formatBytes(size))
-		cmd.Printf("Packages:        %d\n", len(packages))
+		cmd.Printf("Blobs:           %d\n", len(packages))
 		return nil
 	},
 }

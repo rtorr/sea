@@ -134,7 +134,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		}
 		seaPkgDir := filepath.Join(dir, dirs.SeaPackages)
 		for _, pkg := range existingLock.Packages {
-			if err := ensureLinked(c, seaPkgDir, pkg.Name, pkg.Version, pkg.ABI, depLinking(m, pkg.Name)); err != nil {
+			if err := ensureLinked(c, seaPkgDir, pkg.Name, pkg.Version, pkg.SHA256, depLinking(m, pkg.Name)); err != nil {
 				return err
 			}
 		}
@@ -176,98 +176,116 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	seaPkgDir := filepath.Join(dir, dirs.SeaPackages)
 	newLock := &lockfile.LockFile{Version: lockfile.CurrentVersion}
 
-	// ── Phase 1: Download and cache all packages ──
-	// No extraction or linking happens here. If any download fails, we stop
-	// without leaving a half-installed state.
+	// ── Phase 1: Download all packages (concurrent) ──
+	// Content-addressed: if we have the sha256, we have the content.
+	// Downloads are independent — no ordering constraints. We use a worker
+	// pool to parallelize HTTP requests while keeping output ordered.
 	type cachedPkg struct {
 		pkg       resolver.ResolvedPackage
 		verStr    string
 		lockEntry lockfile.LockedPackage
 	}
-	var cached []cachedPkg
 
-	for _, pkg := range resolved {
+	// Separate packages into cached (already have) and need-download
+	type downloadJob struct {
+		idx int
+		pkg resolver.ResolvedPackage
+	}
+
+	cached := make([]cachedPkg, len(resolved))
+	var jobs []downloadJob
+
+	for i, pkg := range resolved {
 		verStr := pkg.Version.String()
 
-		// Check if lockfile already has this exact package and it's cached
+		// Check if lockfile already has this package with a cached hash
 		if existingLock != nil {
 			if locked := existingLock.Find(pkg.Name); locked != nil {
-				lockedABI := locked.ABI
-				if locked.Version == verStr && profile.AreCompatible(lockedABI, abiTag, locked.Fingerprint, prof.ABIFingerprintHash) && c.Has(pkg.Name, verStr, lockedABI) {
-					// Verify hash integrity
-					ok, err := c.VerifyHash(pkg.Name, verStr, lockedABI, locked.SHA256)
-					if err == nil && ok {
-						if verbose {
-							cmd.Printf("  %s@%s — cached (verified)\n", pkg.Name, verStr)
-						}
-						cached = append(cached, cachedPkg{
-							pkg:       pkg,
-							verStr:    verStr,
-							lockEntry: *locked,
-						})
-						continue
+				if locked.Version == verStr && locked.SHA256 != "" && c.Has(locked.SHA256) {
+					if verbose {
+						cmd.Printf("  %s@%s — cached (%s)\n", pkg.Name, verStr, locked.SHA256[:12])
 					}
-					// Hash mismatch — re-download
-					cmd.Printf("  %s@%s — cache integrity check failed, re-downloading\n", pkg.Name, verStr)
-					if err := c.Remove(pkg.Name, verStr, abiTag); err != nil {
-						return fmt.Errorf("cleaning corrupted cache entry: %w", err)
+					cached[i] = cachedPkg{
+						pkg:       pkg,
+						verStr:    verStr,
+						lockEntry: *locked,
 					}
+					continue
 				}
 			}
 		}
 
-		cmd.Printf("  %s@%s (%s)...\n", pkg.Name, verStr, abiTag)
+		jobs = append(jobs, downloadJob{idx: i, pkg: pkg})
+		cached[i] = cachedPkg{pkg: pkg, verStr: verStr} // placeholder
+	}
 
-		// Download if not cached — try prebuilt first, then build from source
-		var lockEntry lockfile.LockedPackage
-		if !c.Has(pkg.Name, verStr, abiTag) && !c.Has(pkg.Name, verStr, "any") {
-			sha, regName, effectiveABI, err := downloadOrBuild(cmd, multi, c, cfg, prof, pkg.Name, verStr, abiTag, dir)
-			if err != nil {
-				return fmt.Errorf("installing %s@%s: %w", pkg.Name, verStr, err)
-			}
-
-			lockEntry = lockfile.LockedPackage{
-				Name:     pkg.Name,
-				Version:  verStr,
-				ABI:      effectiveABI,
-				SHA256:   sha,
-				Registry: regName,
-				Deps:     formatDeps(pkg.Deps, resolved),
-			}
-		} else {
-			// Package is cached — determine which ABI tag it's under
-			cachedABI := abiTag
-			if c.Has(pkg.Name, verStr, "any") && !c.Has(pkg.Name, verStr, abiTag) {
-				cachedABI = "any"
-			}
-			sha := ""
-			if ok, computedHash := computeCachedHash(c, pkg.Name, verStr, cachedABI); ok {
-				sha = computedHash
-			}
-			lockEntry = lockfile.LockedPackage{
-				Name:    pkg.Name,
-				Version: verStr,
-				ABI:     cachedABI,
-				SHA256:  sha,
-				Deps:    formatDeps(pkg.Deps, resolved),
-			}
+	// Download uncached packages concurrently
+	if len(jobs) > 0 {
+		const maxWorkers = 8
+		workers := maxWorkers
+		if len(jobs) < workers {
+			workers = len(jobs)
 		}
 
-		cached = append(cached, cachedPkg{
-			pkg:       pkg,
-			verStr:    verStr,
-			lockEntry: lockEntry,
-		})
+		type downloadResult struct {
+			idx   int
+			entry lockfile.LockedPackage
+			err   error
+		}
+
+		results := make(chan downloadResult, len(jobs))
+		jobsCh := make(chan downloadJob, len(jobs))
+
+		// Feed jobs
+		for _, j := range jobs {
+			jobsCh <- j
+		}
+		close(jobsCh)
+
+		// Spin up workers
+		for w := 0; w < workers; w++ {
+			go func() {
+				for job := range jobsCh {
+					verStr := job.pkg.Version.String()
+					sha, regName, effectiveABI, err := downloadOrBuild(cmd, multi, c, cfg, prof, job.pkg.Name, verStr, abiTag, dir)
+					if err != nil {
+						results <- downloadResult{idx: job.idx, err: fmt.Errorf("installing %s@%s: %w", job.pkg.Name, verStr, err)}
+						continue
+					}
+					results <- downloadResult{
+						idx: job.idx,
+						entry: lockfile.LockedPackage{
+							Name:        job.pkg.Name,
+							Version:     verStr,
+							ABI:         effectiveABI,
+							Fingerprint: prof.ABIFingerprintHash,
+							SHA256:      sha,
+							Registry:    regName,
+							Deps:        formatDeps(job.pkg.Deps, resolved),
+						},
+					}
+				}
+			}()
+		}
+
+		// Collect results
+		for range jobs {
+			r := <-results
+			if r.err != nil {
+				return r.err
+			}
+			cached[r.idx] = cachedPkg{
+				pkg:       resolved[r.idx],
+				verStr:    r.entry.Version,
+				lockEntry: r.entry,
+			}
+			cmd.Printf("  %s@%s (%s)\n", r.entry.Name, r.entry.Version, r.entry.ABI)
+		}
 	}
 
 	// ── Phase 2: Extract and link all packages ──
-	// All downloads succeeded, so now we can safely extract and link.
 	for _, cp := range cached {
-		effectiveABI := cp.lockEntry.ABI
-		if effectiveABI == "" {
-			effectiveABI = abiTag
-		}
-		if err := linkPackage(c, seaPkgDir, cp.pkg.Name, cp.verStr, effectiveABI, depLinking(m, cp.pkg.Name)); err != nil {
+		if err := linkPackage(c, seaPkgDir, cp.pkg.Name, cp.verStr, cp.lockEntry.SHA256, depLinking(m, cp.pkg.Name)); err != nil {
 			return err
 		}
 		newLock.Packages = append(newLock.Packages, cp.lockEntry)
@@ -329,35 +347,16 @@ func runLockedInstall(cmd *cobra.Command, dir string, m *manifest.Manifest, cfg 
 
 	seaPkgDir := filepath.Join(dir, dirs.SeaPackages)
 
-	// Phase 1: Download all packages
-	type downloadResult struct {
-		pkg lockfile.LockedPackage
-		sha string
-	}
-	var downloads []downloadResult
-
+	// Phase 1: Ensure all packages are cached
 	for _, pkg := range lf.Packages {
-		cmd.Printf("  %s@%s (%s)...\n", pkg.Name, pkg.Version, pkg.ABI)
-
-		if c.Has(pkg.Name, pkg.Version, pkg.ABI) {
-			// Verify hash if available
-			if pkg.SHA256 != "" {
-				ok, err := c.VerifyHash(pkg.Name, pkg.Version, pkg.ABI, pkg.SHA256)
-				if err != nil || !ok {
-					cmd.Printf("  %s@%s — cache integrity check failed, re-downloading\n", pkg.Name, pkg.Version)
-					if err := c.Remove(pkg.Name, pkg.Version, pkg.ABI); err != nil {
-						return fmt.Errorf("cleaning corrupted cache: %w", err)
-					}
-				} else {
-					downloads = append(downloads, downloadResult{pkg: pkg, sha: pkg.SHA256})
-					continue
-				}
-			} else {
-				downloads = append(downloads, downloadResult{pkg: pkg, sha: pkg.SHA256})
-				continue
+		if pkg.SHA256 != "" && c.Has(pkg.SHA256) {
+			if verbose {
+				cmd.Printf("  %s@%s — cached (%s)\n", pkg.Name, pkg.Version, pkg.SHA256[:12])
 			}
+			continue
 		}
 
+		cmd.Printf("  %s@%s (%s)...\n", pkg.Name, pkg.Version, pkg.ABI)
 		reg, matchedTag, err := multi.FindRegistry(pkg.Name, pkg.Version, pkg.ABI)
 		if err != nil {
 			return fmt.Errorf("finding %s@%s: %w", pkg.Name, pkg.Version, err)
@@ -366,22 +365,21 @@ func runLockedInstall(cmd *cobra.Command, dir string, m *manifest.Manifest, cfg 
 		if err != nil {
 			return fmt.Errorf("downloading %s@%s: %w", pkg.Name, pkg.Version, err)
 		}
-		sha, err := c.Store(pkg.Name, pkg.Version, pkg.ABI, rc)
+		_, err = c.Store(rc)
 		rc.Close()
 		if err != nil {
 			return fmt.Errorf("caching %s@%s: %w", pkg.Name, pkg.Version, err)
 		}
-		downloads = append(downloads, downloadResult{pkg: pkg, sha: sha})
 	}
 
 	// Phase 2: Extract and link all packages
-	for _, dl := range downloads {
-		linking := depLinking(m, dl.pkg.Name)
-		if err := linkPackage(c, seaPkgDir, dl.pkg.Name, dl.pkg.Version, dl.pkg.ABI, linking); err != nil {
+	for _, pkg := range lf.Packages {
+		linking := depLinking(m, pkg.Name)
+		if err := linkPackage(c, seaPkgDir, pkg.Name, pkg.Version, pkg.SHA256, linking); err != nil {
 			return err
 		}
 	}
 
-	cmd.Printf("Installed %d package(s) from lockfile.\n", len(downloads))
+	cmd.Printf("Installed %d package(s) from lockfile.\n", len(lf.Packages))
 	return nil
 }

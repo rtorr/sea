@@ -16,15 +16,14 @@ import (
 )
 
 // linkPackage extracts (if needed) and symlinks a package into sea_packages/.
-func linkPackage(c *cache.Cache, seaPkgDir, name, version, abiTag, linking string) error {
-	if !c.IsExtracted(name, version, abiTag) {
-		if _, err := c.Extract(name, version, abiTag); err != nil {
-			return fmt.Errorf("extracting %s@%s: %w", name, version, err)
-		}
+// The sha256Hash identifies the content in the cache.
+func linkPackage(c *cache.Cache, seaPkgDir, name, version, sha256Hash, linking string) error {
+	extractDir, err := c.Extract(sha256Hash)
+	if err != nil {
+		return fmt.Errorf("extracting %s@%s: %w", name, version, err)
 	}
 
 	pkgInstallDir := filepath.Join(seaPkgDir, name)
-	extractDir := c.GetExtractDir(name, version, abiTag)
 
 	// Remove existing symlink or directory
 	if fi, err := os.Lstat(pkgInstallDir); err == nil {

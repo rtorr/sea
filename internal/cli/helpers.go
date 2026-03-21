@@ -130,19 +130,18 @@ func lockfileInSync(m *manifest.Manifest, lf *lockfile.LockFile, abiTag string) 
 
 // ensureLinked makes sure a package is extracted and linked in sea_packages,
 // without downloading. Used when the lockfile is in sync.
-func ensureLinked(c *cache.Cache, seaPkgDir, name, version, abiTag, linking string) error {
+func ensureLinked(c *cache.Cache, seaPkgDir, name, version, sha256Hash, linking string) error {
 	// If already linked and target exists, nothing to do
 	pkgDir := filepath.Join(seaPkgDir, name)
 	if fi, err := os.Stat(pkgDir); err == nil && fi.IsDir() {
 		return nil
 	}
 
-	// Need to extract and link from cache
-	if !c.Has(name, version, abiTag) {
-		return fmt.Errorf("package %s@%s not in cache — run 'sea install' without --locked to download it", name, version)
+	if !c.Has(sha256Hash) {
+		return fmt.Errorf("package %s@%s not in cache (hash %s) — run 'sea install' without --locked to download it", name, version, sha256Hash)
 	}
 
-	return linkPackage(c, seaPkgDir, name, version, abiTag, linking)
+	return linkPackage(c, seaPkgDir, name, version, sha256Hash, linking)
 }
 
 // checkInstallABI compares symbols between old and new versions during an upgrade.
