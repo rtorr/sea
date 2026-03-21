@@ -308,6 +308,32 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	integrate.GenerateCMakeIntegration(seaPkgDir)
 
 	cmd.Printf("Installed %d package(s).\n", len(resolved))
+
+	// ── Check for superseded artifacts ──
+	// Quick check: for each installed package, see if the registry has a
+	// newer artifact for the same version. Warns but doesn't block.
+	var stale int
+	for _, cp := range cached {
+		if cp.lockEntry.SHA256 == "" {
+			continue
+		}
+		for _, reg := range multi.Registries() {
+			vm, err := reg.FetchVersionManifest(cp.pkg.Name, cp.verStr)
+			if err != nil || vm == nil {
+				continue
+			}
+			if replacement := vm.IsSuperseded(cp.lockEntry.SHA256); replacement != nil {
+				stale++
+			} else if current := vm.CurrentArtifact(cp.lockEntry.ABI); current != nil && current.SHA256 != "" && current.SHA256 != cp.lockEntry.SHA256 {
+				stale++
+			}
+			break
+		}
+	}
+	if stale > 0 {
+		cmd.Printf("\n%d package(s) have newer artifacts available. Run 'sea audit' for details.\n", stale)
+	}
+
 	return nil
 }
 

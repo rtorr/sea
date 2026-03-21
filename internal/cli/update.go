@@ -32,6 +32,12 @@ Examples:
 }
 
 func runUpdate(cmd *cobra.Command, args []string) error {
+	// --refresh delegates to audit --fix (same-version artifact updates)
+	if refresh, _ := cmd.Flags().GetBool("refresh"); refresh {
+		auditFixFlag = true
+		return runAudit(cmd, args)
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getting working directory: %w", err)
@@ -253,4 +259,5 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 
 func init() {
 	updateCmd.Flags().Bool("check", false, "check for available updates without applying them (exit code 1 if updates available)")
+	updateCmd.Flags().Bool("refresh", false, "refresh artifact hashes without changing versions (pick up security fixes, rebuilds)")
 }

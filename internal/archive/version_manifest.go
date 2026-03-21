@@ -30,6 +30,16 @@ type ArtifactEntry struct {
 	Publisher string `toml:"publisher,omitempty"`   // who published (CI identifier, human)
 	CI        string `toml:"ci,omitempty"`          // "github-actions", "jenkins", etc.
 	RunID     string `toml:"run_id,omitempty"`      // CI run ID
+
+	// Supersedes is the SHA256 of the artifact this one replaces.
+	// Set when a publisher re-publishes the same version (security fix,
+	// build fix, toolchain update). Consumers with the superseded hash
+	// in their lockfile are prompted to refresh.
+	Supersedes string `toml:"supersedes,omitempty"`
+
+	// Reason explains why this artifact supersedes the previous one.
+	// Values: "security", "build-fix", "toolchain-update", "rebuild"
+	Reason string `toml:"reason,omitempty"`
 }
 
 // FindArtifact returns the entry matching channel + ABI tag, or nil.
@@ -71,6 +81,10 @@ func (vm *VersionManifest) Merge(other *VersionManifest) {
 		if existing == nil {
 			vm.Artifacts = append(vm.Artifacts, entry)
 		} else if entry.Timestamp > existing.Timestamp {
+			// Record what this new artifact supersedes
+			if existing.SHA256 != "" && existing.SHA256 != entry.SHA256 {
+				entry.Supersedes = existing.SHA256
+			}
 			*existing = entry
 		}
 	}
@@ -86,6 +100,37 @@ func NewArtifactEntry(channel, abiTag, sha256, publisher string) ArtifactEntry {
 		Timestamp: time.Now().UTC().Format(time.RFC3339),
 		Publisher: publisher,
 	}
+}
+
+// IsSuperseded checks if the given sha256 has been replaced by a newer artifact.
+// Returns the replacement entry if found, nil otherwise.
+func (vm *VersionManifest) IsSuperseded(sha256 string) *ArtifactEntry {
+	if sha256 == "" {
+		return nil
+	}
+	for i := range vm.Artifacts {
+		if vm.Artifacts[i].Supersedes == sha256 {
+			return &vm.Artifacts[i]
+		}
+	}
+	return nil
+}
+
+// CurrentArtifact returns the latest published artifact for a given ABI tag
+// across all channels. If multiple channels have the same ABI tag, the one
+// with the most recent timestamp wins.
+func (vm *VersionManifest) CurrentArtifact(abiTag string) *ArtifactEntry {
+	var best *ArtifactEntry
+	for i := range vm.Artifacts {
+		a := &vm.Artifacts[i]
+		if a.ABITag != abiTag || a.Status != "published" {
+			continue
+		}
+		if best == nil || a.Timestamp > best.Timestamp {
+			best = a
+		}
+	}
+	return best
 }
 
 // ExpectedArtifactEntry creates an expected (not yet published) entry.
