@@ -7,10 +7,11 @@ import (
 	"sort"
 	"strings"
 
+	"github.com/rtorr/sea/internal/dirs"
 	"github.com/spf13/cobra"
 )
 
-const seaPkgDirName = "sea_packages"
+const seaPkgDirName = dirs.SeaPackages
 
 var envCmd = &cobra.Command{
 	Use:   "env",
@@ -296,7 +297,7 @@ func getLdflags(dir string) (string, error) {
 // readLinkingPref reads the .sea-linking preference file from a package directory.
 // Returns "static", "shared", or "" (prefer shared).
 func readLinkingPref(pkgDir string) string {
-	data, err := os.ReadFile(filepath.Join(pkgDir, ".sea-linking"))
+	data, err := os.ReadFile(filepath.Join(pkgDir, dirs.SeaLinking))
 	if err != nil {
 		return ""
 	}

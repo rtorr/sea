@@ -6,6 +6,8 @@ import (
 	"path/filepath"
 	"sort"
 	"strings"
+
+	"github.com/rtorr/sea/internal/dirs"
 )
 
 // GenerateCMakeIntegration creates sea_packages/sea-cmake.cmake that consumers
@@ -73,7 +75,7 @@ func GenerateCMakeIntegration(seaPkgDir string) error {
 
 	// Set CMAKE_MODULE_PATH for our generated Find modules
 	if len(needsFindModule) > 0 {
-		modulesDir := filepath.Join(seaPkgDir, ".cmake_modules")
+		modulesDir := filepath.Join(seaPkgDir, dirs.CMakeModules)
 		sb.WriteString(fmt.Sprintf("\nlist(APPEND CMAKE_MODULE_PATH \"%s\")\n", modulesDir))
 
 		// Generate Find modules

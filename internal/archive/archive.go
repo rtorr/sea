@@ -165,6 +165,7 @@ func Unpack(archivePath, destDir string) error {
 
 	tr := tar.NewReader(zr)
 	fileCount := 0
+	skippedLinks := 0
 
 	for {
 		header, err := tr.Next()
@@ -219,13 +220,20 @@ func Unpack(archivePath, destDir string) error {
 			out.Close()
 
 		case tar.TypeSymlink, tar.TypeLink:
-			// Skip links in package archives for security
+			// Skip links in package archives for security.
+			// sea install recreates necessary soname symlinks after extraction.
+			skippedLinks++
 			continue
 
 		default:
 			// Skip unknown types
 			continue
 		}
+	}
+
+	if skippedLinks > 0 {
+		fmt.Fprintf(os.Stderr, "Note: skipped %d symlink(s) in archive %s (sea recreates them after extraction)\n",
+			skippedLinks, filepath.Base(archivePath))
 	}
 
 	return nil

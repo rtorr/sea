@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/rtorr/sea/internal/archive"
+	"github.com/rtorr/sea/internal/dirs"
 	"github.com/rtorr/sea/internal/registry"
 )
 
@@ -34,15 +35,15 @@ func TestExtractLibName(t *testing.T) {
 		want  string
 	}{
 		{"libz.so", "z"},
-		{"libz.so.1.3.1", ""},  // versioned — skipped, symlink should exist
+		{"libz.so.1.3.1", ""}, // versioned — skipped, symlink should exist
 		{"libssl.dylib", "ssl"},
 		{"libcrypto.a", "crypto"},
 		{"foo.lib", "foo"},
-		{"libfoo.so.1", ""},    // versioned — skipped
+		{"libfoo.so.1", ""}, // versioned — skipped
 		{"random.txt", ""},
-		{"lib.so", ""},         // no lib name after "lib" prefix
-		{"libfmt.11.1.4.dylib", ""},  // versioned dylib — skipped
-		{"libfmt.dylib", "fmt"},      // short name — included
+		{"lib.so", ""},              // no lib name after "lib" prefix
+		{"libfmt.11.1.4.dylib", ""}, // versioned dylib — skipped
+		{"libfmt.dylib", "fmt"},     // short name — included
 	}
 	for _, tt := range tests {
 		got := extractLibName(tt.input)
@@ -250,28 +251,28 @@ func TestLinkingPreferenceBehavior(t *testing.T) {
 	}
 
 	// Write "static" preference
-	os.WriteFile(filepath.Join(dir, ".sea-linking"), []byte("static"), 0o644)
+	os.WriteFile(filepath.Join(dir, dirs.SeaLinking), []byte("static"), 0o644)
 	pref = readLinkingPref(dir)
 	if pref != "static" {
 		t.Errorf("expected \"static\", got %q", pref)
 	}
 
 	// Write "shared" preference
-	os.WriteFile(filepath.Join(dir, ".sea-linking"), []byte("shared"), 0o644)
+	os.WriteFile(filepath.Join(dir, dirs.SeaLinking), []byte("shared"), 0o644)
 	pref = readLinkingPref(dir)
 	if pref != "shared" {
 		t.Errorf("expected \"shared\", got %q", pref)
 	}
 
 	// Write invalid preference — returns empty
-	os.WriteFile(filepath.Join(dir, ".sea-linking"), []byte("invalid"), 0o644)
+	os.WriteFile(filepath.Join(dir, dirs.SeaLinking), []byte("invalid"), 0o644)
 	pref = readLinkingPref(dir)
 	if pref != "" {
 		t.Errorf("expected empty for invalid preference, got %q", pref)
 	}
 
 	// Write preference with trailing whitespace — should be trimmed
-	os.WriteFile(filepath.Join(dir, ".sea-linking"), []byte("static\n"), 0o644)
+	os.WriteFile(filepath.Join(dir, dirs.SeaLinking), []byte("static\n"), 0o644)
 	pref = readLinkingPref(dir)
 	if pref != "static" {
 		t.Errorf("expected \"static\" with trimmed whitespace, got %q", pref)

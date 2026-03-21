@@ -6,6 +6,7 @@ import (
 	"path/filepath"
 
 	"github.com/rtorr/sea/internal/config"
+	"github.com/rtorr/sea/internal/dirs"
 	"github.com/rtorr/sea/internal/lockfile"
 	"github.com/rtorr/sea/internal/manifest"
 	"github.com/rtorr/sea/internal/registry"
@@ -16,7 +17,7 @@ import (
 var uninstallCmd = &cobra.Command{
 	Use:   "uninstall <name>",
 	Short: "Remove a dependency",
-	Long: `Remove a package from sea_packages/ and sea.toml, then re-resolve the lockfile.
+	Long: `Remove a package from the project and sea.toml, then re-resolve the lockfile.
 
 Examples:
   sea uninstall zlib`,
@@ -62,7 +63,7 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Remove from sea_packages/
-	pkgDir := filepath.Join(dir, "sea_packages", name)
+	pkgDir := filepath.Join(dir, dirs.SeaPackages, name)
 	if fi, err := os.Lstat(pkgDir); err == nil {
 		if fi.Mode()&os.ModeSymlink != 0 {
 			if err := os.Remove(pkgDir); err != nil {
@@ -73,11 +74,11 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 				return fmt.Errorf("removing directory %s: %w", pkgDir, err)
 			}
 		}
-		cmd.Printf("Removed %s from sea_packages/\n", name)
+		cmd.Printf("Removed %s from %s/\n", name, dirs.SeaPackages)
 	}
 
 	// Also remove from sea_build_packages/ if present
-	buildPkgDir := filepath.Join(dir, "sea_build_packages", name)
+	buildPkgDir := filepath.Join(dir, dirs.SeaBuildPackages, name)
 	if fi, err := os.Lstat(buildPkgDir); err == nil {
 		if fi.Mode()&os.ModeSymlink != 0 {
 			if err := os.Remove(buildPkgDir); err != nil {

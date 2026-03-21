@@ -1,18 +1,24 @@
 package cli
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/rtorr/sea/internal/cache"
 	"github.com/rtorr/sea/internal/config"
+	"github.com/rtorr/sea/internal/dirs"
 	"github.com/rtorr/sea/internal/lockfile"
 	"github.com/rtorr/sea/internal/manifest"
 	"github.com/rtorr/sea/internal/registry"
 	"github.com/rtorr/sea/internal/resolver"
 	"github.com/spf13/cobra"
 )
+
+// errUpdatesAvailable is returned by --check when updates exist.
+// The root command maps this to exit code 1 without printing "Error:".
+var errUpdatesAvailable = errors.New("updates available")
 
 var updateCmd = &cobra.Command{
 	Use:   "update [name]",
@@ -128,8 +134,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		} else {
 			cmd.Printf("\n%d update(s) available, none require rebuild.\n", changed)
 		}
-		os.Exit(1)
-		return nil
+		return errUpdatesAvailable
 	}
 
 	// Set up cache
@@ -138,7 +143,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("initializing cache: %w", err)
 	}
 
-	seaPkgDir := filepath.Join(dir, "sea_packages")
+	seaPkgDir := filepath.Join(dir, dirs.SeaPackages)
 	newLock := &lockfile.LockFile{Version: 1}
 	var changed int
 

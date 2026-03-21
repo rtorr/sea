@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/rtorr/sea/internal/dirs"
+	"github.com/rtorr/sea/internal/lockfile"
 	"github.com/spf13/cobra"
 )
 
@@ -20,20 +22,19 @@ and sea.lock from the current project. Does not clear the global cache
 			return err
 		}
 
-		dirs := []string{
-			"sea_packages",
-			"sea_build",
-			"sea_build_packages",
-			"_src",
-			"_fbuild",
-			"_build",
+		cleanDirs := []string{
+			dirs.SeaPackages,
+			dirs.SeaBuild,
+			dirs.SeaBuildPackages,
+			dirs.SrcCache,
+			dirs.SeaBuildInternal,
 		}
 		files := []string{
-			"sea.lock",
+			lockfile.FileName,
 		}
 
 		removed := 0
-		for _, d := range dirs {
+		for _, d := range cleanDirs {
 			p := filepath.Join(dir, d)
 			if fi, err := os.Lstat(p); err == nil {
 				if fi.Mode()&os.ModeSymlink != 0 {
@@ -68,10 +69,10 @@ var reinstallCmd = &cobra.Command{
 	Short: "Clean and reinstall all dependencies",
 	Long:  "Equivalent to 'sea clean && sea install'. Removes all artifacts then re-resolves and installs fresh.",
 	RunE: func(cmd *cobra.Command, args []string) error {
-		// Clean
-		cleanCmd.RunE(cmd, nil)
+		if err := cleanCmd.RunE(cmd, nil); err != nil {
+			return fmt.Errorf("clean: %w", err)
+		}
 		fmt.Println()
-		// Install
 		return installCmd.RunE(cmd, args)
 	},
 }

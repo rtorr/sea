@@ -25,6 +25,28 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SEA="$PROJECT_ROOT/bin/sea"
+
+# ── Prerequisite check ──
+MISSING=""
+for tool in go cc make curl sed awk; do
+    command -v "$tool" >/dev/null 2>&1 || MISSING="$MISSING $tool"
+done
+if [ -n "$MISSING" ]; then
+    echo "Missing required tools:$MISSING"
+    echo "Install them and re-run."
+    exit 1
+fi
+
+# Portable SHA-256 command (macOS: shasum -a 256, Linux: sha256sum)
+if command -v sha256sum >/dev/null 2>&1; then
+    sha256() { sha256sum "$1" | awk '{print $1}'; }
+elif command -v shasum >/dev/null 2>&1; then
+    sha256() { shasum -a 256 "$1" | awk '{print $1}'; }
+else
+    echo "Missing: sha256sum or shasum"
+    exit 1
+fi
+
 TMPBASE=$(mktemp -d)
 
 export SEA_HOME="$TMPBASE/sea-home"
@@ -155,7 +177,7 @@ pass "consumer compiled"
 pass "consumer runs with cjson@1.7.0"
 
 # Record the binary hash
-BINARY_HASH_BEFORE=$(shasum -a 256 "$TMPBASE/upgrade-test" | awk '{print $1}')
+BINARY_HASH_BEFORE=$(sha256 "$TMPBASE/upgrade-test")
 echo "  Binary SHA256: ${BINARY_HASH_BEFORE:0:16}..."
 
 # ── Publish cjson@1.7.1 (patch fix, same ABI) ──
@@ -214,7 +236,7 @@ fi
 
 # ── Run the SAME binary (not recompiled) ──
 info "Step 7: Run the ORIGINAL binary (not recompiled) with updated library..."
-BINARY_HASH_AFTER=$(shasum -a 256 "$TMPBASE/upgrade-test" | awk '{print $1}')
+BINARY_HASH_AFTER=$(sha256 "$TMPBASE/upgrade-test")
 
 if [ "$BINARY_HASH_BEFORE" = "$BINARY_HASH_AFTER" ]; then
     pass "binary unchanged (SHA256 identical — not recompiled)"

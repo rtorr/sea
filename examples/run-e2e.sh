@@ -11,6 +11,21 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 SEA="$PROJECT_ROOT/bin/sea"
+
+# ── Prerequisite check ──
+MISSING=""
+for tool in go cc make curl; do
+    command -v "$tool" >/dev/null 2>&1 || MISSING="$MISSING $tool"
+done
+# c++ is needed for fmt; cmake is needed for fmt build
+command -v c++ >/dev/null 2>&1 || MISSING="$MISSING c++"
+command -v cmake >/dev/null 2>&1 || MISSING="$MISSING cmake"
+if [ -n "$MISSING" ]; then
+    echo "Missing required tools:$MISSING"
+    echo "Install them and re-run."
+    exit 1
+fi
+
 TMPBASE=$(mktemp -d)
 
 export SEA_HOME="$TMPBASE/sea-home"
@@ -159,7 +174,8 @@ FMT_LIB="sea_packages/fmt/lib"
 
 if [ -d "$FMT_LIB" ] && [ -d "$FMT_INC" ]; then
     FMT_LIB_ABS="$(cd "$FMT_LIB" && pwd)"
-    # Create symlinks if only the versioned dylib exists (archive skips symlinks)
+    # Create symlinks if only the versioned library exists (archive skips symlinks).
+    # Handle both macOS (.dylib) and Linux (.so) naming.
     VERSIONED=$(ls "$FMT_LIB_ABS"/libfmt.*.*.*.dylib 2>/dev/null | head -1)
     if [ -n "$VERSIONED" ]; then
         VBASE=$(basename "$VERSIONED")
@@ -167,6 +183,14 @@ if [ -d "$FMT_LIB" ] && [ -d "$FMT_INC" ]; then
         # Also create the soname symlink (e.g. libfmt.11.dylib)
         SONAME=$(echo "$VBASE" | sed 's/\([^.]*\.[^.]*\)\..*/\1.dylib/')
         [ ! -f "$FMT_LIB_ABS/$SONAME" ] && ln -sf "$VBASE" "$FMT_LIB_ABS/$SONAME"
+    fi
+    VERSIONED_SO=$(ls "$FMT_LIB_ABS"/libfmt.so.*.*.* 2>/dev/null | head -1)
+    if [ -n "$VERSIONED_SO" ]; then
+        VBASE=$(basename "$VERSIONED_SO")
+        [ ! -f "$FMT_LIB_ABS/libfmt.so" ] && ln -sf "$VBASE" "$FMT_LIB_ABS/libfmt.so"
+        # Also create the soname symlink (e.g. libfmt.so.11)
+        MAJOR=$(echo "$VBASE" | sed 's/libfmt\.so\.\([0-9]*\).*/\1/')
+        [ ! -f "$FMT_LIB_ABS/libfmt.so.$MAJOR" ] && ln -sf "$VBASE" "$FMT_LIB_ABS/libfmt.so.$MAJOR"
     fi
     if c++ -std=c++17 "-I$FMT_INC" src/hello.cpp \
         "-L$FMT_LIB_ABS" -lfmt \

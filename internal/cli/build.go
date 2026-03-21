@@ -8,6 +8,7 @@ import (
 	"github.com/rtorr/sea/internal/builder"
 	"github.com/rtorr/sea/internal/cache"
 	"github.com/rtorr/sea/internal/config"
+	"github.com/rtorr/sea/internal/dirs"
 	"github.com/rtorr/sea/internal/manifest"
 	"github.com/rtorr/sea/internal/profile"
 	"github.com/rtorr/sea/internal/registry"
@@ -86,7 +87,7 @@ var buildCmd = &cobra.Command{
 		}
 
 		// Set SEA_BUILD_PACKAGES_DIR env var
-		buildPkgDir := filepath.Join(dir, "sea_build_packages")
+		buildPkgDir := filepath.Join(dir, dirs.SeaBuildPackages)
 		if _, statErr := os.Stat(buildPkgDir); statErr == nil {
 			os.Setenv("SEA_BUILD_PACKAGES_DIR", buildPkgDir)
 		}
@@ -161,7 +162,7 @@ func installBuildDeps(cmd *cobra.Command, dir string, m *manifest.Manifest, cfg 
 		return fmt.Errorf("initializing cache: %w", err)
 	}
 
-	buildPkgDir := filepath.Join(dir, "sea_build_packages")
+	buildPkgDir := filepath.Join(dir, dirs.SeaBuildPackages)
 	for _, pkg := range resolved {
 		if !buildOnlyNames[pkg.Name] {
 			continue // runtime dep, handled by normal install
