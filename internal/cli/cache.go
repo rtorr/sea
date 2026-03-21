@@ -107,10 +107,39 @@ var cacheInfoCmd = &cobra.Command{
 	},
 }
 
+var cachePathCmd = &cobra.Command{
+	Use:   "path",
+	Short: "Print cache directory path (for scripting/CI)",
+	Long: `Print the cache directory path with no other output.
+
+Useful for CI cache integration:
+
+  # GitHub Actions example
+  - uses: actions/cache@v4
+    with:
+      path: $(sea cache path)
+      key: sea-${{ runner.os }}-${{ hashFiles('sea.lock') }}`,
+	RunE: func(cmd *cobra.Command, args []string) error {
+		cfg, err := config.Load()
+		if err != nil {
+			return err
+		}
+
+		c, err := cache.New(cfg)
+		if err != nil {
+			return err
+		}
+
+		fmt.Fprintln(cmd.OutOrStdout(), c.Layout.Root)
+		return nil
+	},
+}
+
 func init() {
 	cacheCmd.AddCommand(cacheCleanCmd)
 	cacheCmd.AddCommand(cacheListCmd)
 	cacheCmd.AddCommand(cacheInfoCmd)
+	cacheCmd.AddCommand(cachePathCmd)
 }
 
 func formatBytes(b int64) string {

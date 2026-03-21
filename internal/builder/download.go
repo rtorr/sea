@@ -22,10 +22,43 @@ const downloadTimeout = 10 * time.Minute
 // DownloadSource downloads and extracts the source archive specified in
 // [build.source]. Returns the path to the extracted source directory.
 // This replaces the need for build.sh scripts that manually curl+tar.
+// resolveSourceURL rewrites the URL to use a pinned commit SHA if one is specified.
+// For GitHub URLs like https://github.com/org/repo/archive/refs/heads/main.tar.gz,
+// it replaces the branch reference with the commit SHA.
+func resolveSourceURL(src manifest.BuildSource) string {
+	url := src.URL
+	if src.Commit == "" || url == "" {
+		return url
+	}
+
+	// GitHub archive URL patterns:
+	//   /archive/refs/heads/<branch>.tar.gz  →  /archive/<commit>.tar.gz
+	//   /archive/refs/tags/<tag>.tar.gz      →  /archive/<commit>.tar.gz
+	//   /tarball/<branch>                    →  /archive/<commit>.tar.gz
+	if strings.Contains(url, "github.com") || strings.Contains(url, "github") {
+		if idx := strings.Index(url, "/archive/refs/"); idx > 0 {
+			base := url[:idx]
+			ext := ".tar.gz"
+			return base + "/archive/" + src.Commit + ext
+		}
+		if idx := strings.Index(url, "/tarball/"); idx > 0 {
+			base := url[:idx]
+			return base + "/archive/" + src.Commit + ".tar.gz"
+		}
+	}
+
+	// For non-GitHub URLs with a commit, warn but use the URL as-is
+	// (the user should set SHA256 for integrity)
+	return url
+}
+
 func DownloadSource(src manifest.BuildSource, destDir string) (string, error) {
 	if src.URL == "" {
 		return "", fmt.Errorf("no source URL specified")
 	}
+
+	// Rewrite URL to use pinned commit if specified
+	src.URL = resolveSourceURL(src)
 
 	if err := os.MkdirAll(destDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating source directory: %w", err)

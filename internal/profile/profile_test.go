@@ -17,7 +17,7 @@ func TestABITag(t *testing.T) {
 				Compiler: "gcc", CompilerVersion: "13",
 				CppStdlib: "libstdc++",
 			},
-			expected: "linux-x86_64-gcc13-libstdcxx",
+			expected: "linux-x86_64-libstdcxx",
 		},
 		{
 			name: "darwin clang17",
@@ -26,7 +26,7 @@ func TestABITag(t *testing.T) {
 				Compiler: "clang", CompilerVersion: "17",
 				CppStdlib: "libc++",
 			},
-			expected: "darwin-aarch64-clang17-libcxx",
+			expected: "darwin-aarch64-libcxx",
 		},
 		{
 			name: "windows msvc",
@@ -35,7 +35,7 @@ func TestABITag(t *testing.T) {
 				Compiler: "msvc", CompilerVersion: "v143",
 				CppStdlib: "msvc",
 			},
-			expected: "windows-x86_64-msvcv143-msvc",
+			expected: "windows-x86_64-msvc",
 		},
 	}
 
@@ -66,36 +66,6 @@ func TestDetectHost(t *testing.T) {
 	}
 }
 
-func TestAreCompatible(t *testing.T) {
-	rules := []CompatRule{
-		{
-			Name: "gcc12-gcc13-compat",
-			Tags: []string{
-				"linux-x86_64-gcc12-libstdcxx",
-				"linux-x86_64-gcc13-libstdcxx",
-			},
-		},
-	}
-
-	tests := []struct {
-		tag1, tag2 string
-		want       bool
-	}{
-		{"linux-x86_64-gcc13-libstdcxx", "linux-x86_64-gcc13-libstdcxx", true},
-		{"linux-x86_64-gcc12-libstdcxx", "linux-x86_64-gcc13-libstdcxx", true},
-		{"linux-x86_64-gcc11-libstdcxx", "linux-x86_64-gcc13-libstdcxx", false},
-		{"any", "linux-x86_64-gcc13-libstdcxx", true},
-		{"linux-x86_64-gcc13-libstdcxx", "any", true},
-	}
-
-	for _, tt := range tests {
-		got := AreCompatible(tt.tag1, tt.tag2, rules)
-		if got != tt.want {
-			t.Errorf("AreCompatible(%q, %q) = %v, want %v", tt.tag1, tt.tag2, got, tt.want)
-		}
-	}
-}
-
 func TestParseProfile(t *testing.T) {
 	data := []byte(`
 name = "aarch64-linux-gcc13"
@@ -119,7 +89,7 @@ CXX = "aarch64-linux-gnu-g++-13"
 	if p.Name != "aarch64-linux-gcc13" {
 		t.Errorf("unexpected name: %s", p.Name)
 	}
-	if p.ABITag() != "linux-aarch64-gcc13-libstdcxx" {
+	if p.ABITag() != "linux-aarch64-libstdcxx" {
 		t.Errorf("unexpected ABI tag: %s", p.ABITag())
 	}
 	if p.Env["CC"] != "aarch64-linux-gnu-gcc-13" {

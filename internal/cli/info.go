@@ -77,7 +77,7 @@ func showAllPackages(cmd *cobra.Command, multi *registry.Multi) error {
 		for _, ver := range r.Versions {
 			tags, _ := multi.ListABITagsFromAny(r.Name, ver)
 			for _, t := range tags {
-				if profile.AreCompatible(t, hostABI, nil) {
+				if t == hostABI || t == "any" {
 					compatible = "  ✓"
 					break
 				}

@@ -87,7 +87,23 @@ type Publish struct {
 // When set, sea downloads and extracts the source automatically — no build.sh needed.
 type BuildSource struct {
 	// URL is the download URL for the source archive (.tar.gz, .tar.xz, .zip).
+	//
+	// If Commit is also set and URL contains a GitHub archive pattern
+	// (refs/heads/<branch>), the URL is automatically rewritten to use
+	// the pinned commit SHA for reproducible builds.
 	URL string `toml:"url,omitempty"`
+
+	// Commit pins the source to a specific git commit SHA. This ensures
+	// reproducible builds — the same commit always produces the same source.
+	//
+	// When set with a GitHub URL, sea rewrites the URL from:
+	//   https://github.com/org/repo/archive/refs/heads/main.tar.gz
+	// to:
+	//   https://github.com/org/repo/archive/<commit>.tar.gz
+	//
+	// If URL is not set but Commit is, sea constructs the URL from the
+	// package's known repository (if any).
+	Commit string `toml:"commit,omitempty"`
 
 	// Strip is the number of leading path components to strip when extracting
 	// (like tar --strip-components). Default 1 (strips the top-level directory

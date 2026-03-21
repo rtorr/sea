@@ -31,6 +31,14 @@ type MetaABI struct {
 	CompilerVersion string `toml:"compiler_version"`
 	CppStdlib       string `toml:"cpp_stdlib"`
 	BuildType       string `toml:"build_type"`
+
+	// Fingerprint is the empirical ABI fingerprint hash from the ABI probe.
+	// It captures actual type layout (sizeof std::string, std::vector, etc.),
+	// name mangling scheme, and exception ABI — the things that actually
+	// determine binary compatibility. Two packages with the same fingerprint
+	// are link-compatible regardless of compiler version strings.
+	// Empty for packages published before probe support was added.
+	Fingerprint string `toml:"fingerprint,omitempty"`
 }
 
 type MetaContents struct {

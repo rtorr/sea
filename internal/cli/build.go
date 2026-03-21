@@ -8,6 +8,7 @@ import (
 	"github.com/rtorr/sea/internal/builder"
 	"github.com/rtorr/sea/internal/cache"
 	"github.com/rtorr/sea/internal/config"
+	"github.com/rtorr/sea/internal/integrate"
 	"github.com/rtorr/sea/internal/manifest"
 	"github.com/rtorr/sea/internal/profile"
 	"github.com/rtorr/sea/internal/registry"
@@ -50,10 +51,11 @@ var buildCmd = &cobra.Command{
 		prof := getProfile(cfg)
 		cmd.Printf("Building %s@%s for %s\n", m.Package.Name, m.Package.Version, prof.ABITag())
 
-		// Install build dependencies to sea_build_packages/ if any
-		if len(m.BuildDeps) > 0 {
+		// Install all dependencies (runtime + build) before building.
+		// Runtime deps are needed at build time too (headers + link libs).
+		if len(m.Dependencies) > 0 || len(m.BuildDeps) > 0 {
 			if err := installBuildDeps(cmd, dir, m, cfg, prof); err != nil {
-				return fmt.Errorf("installing build dependencies: %w", err)
+				return fmt.Errorf("installing dependencies: %w", err)
 			}
 		}
 
@@ -138,12 +140,14 @@ func installBuildDeps(cmd *cobra.Command, dir string, m *manifest.Manifest, cfg 
 		return fmt.Errorf("no registries configured — use 'sea remote add' to add one")
 	}
 
-	compatRules := loadCompatRules(cfg)
-	multi.SetCompatRules(compatRules)
+	if err := prof.EnsureFingerprint(); err != nil {
+		cmd.Printf("Warning: ABI probe failed: %v\n", err)
+	}
+	multi.SetLocalFingerprint(prof.ABIFingerprintHash)
 	abiTag := prof.ABITag()
 
 	// Resolve all deps (runtime + build) together for coherent resolution
-	resolved, err := resolver.ResolveFromManifest(m, multi, prof, compatRules, true)
+	resolved, err := resolver.ResolveFromManifest(m, multi, prof, true)
 	if err != nil {
 		return err
 	}
@@ -161,15 +165,24 @@ func installBuildDeps(cmd *cobra.Command, dir string, m *manifest.Manifest, cfg 
 		return fmt.Errorf("initializing cache: %w", err)
 	}
 
+	seaPkgDir := filepath.Join(dir, "sea_packages")
 	buildPkgDir := filepath.Join(dir, "sea_build_packages")
-	for _, pkg := range resolved {
-		if !buildOnlyNames[pkg.Name] {
-			continue // runtime dep, handled by normal install
-		}
-		verStr := pkg.Version.String()
-		cmd.Printf("  [build] %s@%s (%s)...\n", pkg.Name, verStr, abiTag)
 
-		if !c.Has(pkg.Name, verStr, abiTag) {
+	for _, pkg := range resolved {
+		verStr := pkg.Version.String()
+		isBuildOnly := buildOnlyNames[pkg.Name]
+
+		label := ""
+		targetDir := seaPkgDir
+		if isBuildOnly {
+			label = "[build] "
+			targetDir = buildPkgDir
+		}
+
+		// Check cache, download if needed
+		effectiveABI := abiTag
+		if !c.Has(pkg.Name, verStr, abiTag) && !c.Has(pkg.Name, verStr, "any") {
+			cmd.Printf("  %s%s@%s (%s)...\n", label, pkg.Name, verStr, abiTag)
 			reg, matchedTag, err := multi.FindRegistry(pkg.Name, verStr, abiTag)
 			if err != nil {
 				return fmt.Errorf("finding %s@%s: %w", pkg.Name, verStr, err)
@@ -178,18 +191,24 @@ func installBuildDeps(cmd *cobra.Command, dir string, m *manifest.Manifest, cfg 
 			if err != nil {
 				return fmt.Errorf("downloading %s@%s: %w", pkg.Name, verStr, err)
 			}
-			_, err = c.Store(pkg.Name, verStr, abiTag, rc)
+			_, err = c.Store(pkg.Name, verStr, matchedTag, rc)
 			rc.Close()
 			if err != nil {
 				return fmt.Errorf("caching %s@%s: %w", pkg.Name, verStr, err)
 			}
+			effectiveABI = matchedTag
+		} else if c.Has(pkg.Name, verStr, "any") {
+			effectiveABI = "any"
 		}
 
 		linking := depLinking(m, pkg.Name)
-		if err := linkPackage(c, buildPkgDir, pkg.Name, verStr, abiTag, linking); err != nil {
+		if err := linkPackage(c, targetDir, pkg.Name, verStr, effectiveABI, linking); err != nil {
 			return err
 		}
 	}
+
+	// Generate cmake integration for runtime deps
+	integrate.GenerateCMakeIntegration(seaPkgDir)
 
 	return nil
 }

@@ -5,7 +5,9 @@ import (
 	"encoding/hex"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 
@@ -36,6 +38,11 @@ Use --skip-verify to bypass the ABI verification check.`,
 }
 
 func runPublish(cmd *cobra.Command, args []string) error {
+	ciFlag, _ := cmd.Flags().GetBool("ci")
+	if ciFlag {
+		return runPublishCI(cmd, args)
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getting working directory: %w", err)
@@ -85,8 +92,10 @@ func runPublish(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return fmt.Errorf("initializing registries: %w", err)
 	}
-	compatRules := loadCompatRules(cfg)
-	multi.SetCompatRules(compatRules)
+	if err := prof.EnsureFingerprint(); err != nil {
+		cmd.Printf("Warning: ABI probe failed: %v\n", err)
+	}
+	multi.SetLocalFingerprint(prof.ABIFingerprintHash)
 
 	// Determine source directory: built output or project root.
 	// For header-only packages, the build output uses the host ABI tag
@@ -240,6 +249,7 @@ func runPublish(cmd *cobra.Command, args []string) error {
 			CompilerVersion: prof.CompilerVersion,
 			CppStdlib:       prof.CppStdlib,
 			BuildType:       prof.BuildType,
+			Fingerprint:     prof.ABIFingerprintHash,
 		},
 		Contents: archive.MetaContents{
 			IncludeDirs: []string{"include"},
@@ -464,6 +474,7 @@ func init() {
 	publishCmd.Flags().String("registry", "", "override publish registry")
 	publishCmd.Flags().Bool("skip-verify", false, "skip ABI version verification and static leak checking")
 	publishCmd.Flags().Bool("dry-run", false, "show what would be published without uploading")
+	publishCmd.Flags().Bool("ci", false, "trigger CI to build and publish for all platforms")
 }
 
 func isLibrary(name string) bool {
@@ -476,4 +487,92 @@ func isLibrary(name string) bool {
 		return true
 	}
 	return false
+}
+
+// runPublishCI triggers a GitHub Actions workflow_dispatch to build and publish
+// the current package on all platforms (linux, macos, windows).
+func runPublishCI(cmd *cobra.Command, args []string) error {
+	dir, err := os.Getwd()
+	if err != nil {
+		return fmt.Errorf("getting working directory: %w", err)
+	}
+
+	m, err := manifest.Load(dir)
+	if err != nil {
+		return fmt.Errorf("loading manifest: %w", err)
+	}
+
+	cfg, err := config.Load()
+	if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	}
+
+	// Find the github-releases registry to get the repo
+	regName := m.Publish.Registry
+	if r, _ := cmd.Flags().GetString("registry"); r != "" {
+		regName = r
+	}
+	if regName == "" {
+		return fmt.Errorf("no publish registry specified")
+	}
+
+	remote := cfg.FindRemote(regName)
+	if remote == nil {
+		return fmt.Errorf("registry %q not found", regName)
+	}
+	if remote.Type != "github-releases" {
+		return fmt.Errorf("--ci only works with github-releases registries (got %q)", remote.Type)
+	}
+
+	// remote.URL is "owner/repo"
+	repo := remote.URL
+
+	// Determine the package path (relative to repo root) by convention:
+	// packages/<name>/<version>
+	pkg := fmt.Sprintf("%s/%s", m.Package.Name, m.Package.Version)
+
+	// Get GitHub token
+	token := os.Getenv("GITHUB_TOKEN")
+	if remote.TokenEnv != "" {
+		if t := os.Getenv(remote.TokenEnv); t != "" {
+			token = t
+		}
+	}
+	if token == "" {
+		// Try gh CLI
+		if out, err := exec.Command("gh", "auth", "token").Output(); err == nil {
+			token = strings.TrimSpace(string(out))
+		}
+	}
+	if token == "" {
+		return fmt.Errorf("no GitHub token available (set GITHUB_TOKEN or run 'gh auth login')")
+	}
+
+	// Trigger workflow_dispatch via GitHub API
+	apiURL := fmt.Sprintf("https://api.github.com/repos/%s/actions/workflows/build-packages.yml/dispatches", repo)
+
+	body := fmt.Sprintf(`{"ref":"main","inputs":{"package":"%s"}}`, pkg)
+
+	req, err := http.NewRequest("POST", apiURL, strings.NewReader(body))
+	if err != nil {
+		return fmt.Errorf("creating request: %w", err)
+	}
+	req.Header.Set("Authorization", "Bearer "+token)
+	req.Header.Set("Accept", "application/vnd.github.v3+json")
+	req.Header.Set("Content-Type", "application/json")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return fmt.Errorf("triggering CI: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode == 204 {
+		cmd.Printf("Triggered CI build for %s@%s on all platforms\n", m.Package.Name, m.Package.Version)
+		cmd.Printf("View at: https://github.com/%s/actions\n", repo)
+		return nil
+	}
+
+	respBody, _ := io.ReadAll(resp.Body)
+	return fmt.Errorf("CI trigger failed (HTTP %d): %s", resp.StatusCode, string(respBody))
 }

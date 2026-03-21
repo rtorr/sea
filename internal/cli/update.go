@@ -52,8 +52,10 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no registries configured — use 'sea remote add' to add one")
 	}
 
-	compatRules := loadCompatRules(cfg)
-	multi.SetCompatRules(compatRules)
+	if err := prof.EnsureFingerprint(); err != nil {
+		cmd.Printf("Warning: ABI probe failed: %v\n", err)
+	}
+	multi.SetLocalFingerprint(prof.ABIFingerprintHash)
 
 	// Load existing lockfile to track what changed
 	existingLock, err := lockfile.Load(dir)
@@ -81,7 +83,7 @@ func runUpdate(cmd *cobra.Command, args []string) error {
 	cmd.Printf("Resolving dependencies for %s\n", abiTag)
 
 	// Re-resolve from scratch (fresh resolution picks latest allowed)
-	resolved, err := resolver.ResolveFromManifest(m, multi, prof, compatRules, false)
+	resolved, err := resolver.ResolveFromManifest(m, multi, prof, false)
 	if err != nil {
 		return err
 	}

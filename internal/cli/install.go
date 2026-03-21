@@ -105,9 +105,11 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		return fmt.Errorf("no registries configured — use 'sea remote add' to add one")
 	}
 
-	// Load ABI compatibility rules
-	compatRules := loadCompatRules(cfg)
-	multi.SetCompatRules(compatRules)
+	// Probe the local toolchain's ABI fingerprint
+	if err := prof.EnsureFingerprint(); err != nil {
+		cmd.Printf("Warning: ABI probe failed (%v), falling back to exact tag matching\n", err)
+	}
+	multi.SetLocalFingerprint(prof.ABIFingerprintHash)
 
 	abiTag := prof.ABITag()
 
@@ -162,7 +164,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 	}
 
 	// Resolve dependencies (runtime only), preferring locked versions
-	resolved, err := resolver.ResolveFromManifestWithFeatures(m, multi, prof, compatRules, false, enabledFeatures, prefs)
+	resolved, err := resolver.ResolveFromManifestWithFeatures(m, multi, prof, false, enabledFeatures, prefs)
 	if err != nil {
 		return err // resolver errors are already well-formatted
 	}
@@ -198,7 +200,7 @@ func runInstall(cmd *cobra.Command, args []string) error {
 		if existingLock != nil {
 			if locked := existingLock.Find(pkg.Name); locked != nil {
 				lockedABI := locked.ABI
-				if locked.Version == verStr && profile.AreCompatible(lockedABI, abiTag, compatRules) && c.Has(pkg.Name, verStr, lockedABI) {
+				if locked.Version == verStr && profile.AreCompatible(lockedABI, abiTag, locked.Fingerprint, prof.ABIFingerprintHash) && c.Has(pkg.Name, verStr, lockedABI) {
 					// Verify hash integrity
 					ok, err := c.VerifyHash(pkg.Name, verStr, lockedABI, locked.SHA256)
 					if err == nil && ok {
@@ -322,8 +324,10 @@ func runLockedInstall(cmd *cobra.Command, dir string, m *manifest.Manifest, cfg 
 	if err != nil {
 		return fmt.Errorf("initializing registries: %w", err)
 	}
-	compatRules := loadCompatRules(cfg)
-	multi.SetCompatRules(compatRules)
+	if err := prof.EnsureFingerprint(); err != nil {
+		cmd.Printf("Warning: ABI probe failed: %v\n", err)
+	}
+	multi.SetLocalFingerprint(prof.ABIFingerprintHash)
 
 	c, err := cache.New(cfg)
 	if err != nil {
@@ -688,19 +692,6 @@ func getProfile(cfg *config.Config) *profile.Profile {
 	return profile.DetectHost()
 }
 
-func loadCompatRules(cfg *config.Config) []profile.CompatRule {
-	seaDir, err := config.SeaDir()
-	if err != nil {
-		return nil
-	}
-	rulesPath := filepath.Join(seaDir, "config", "abi-compat.toml")
-	rules, err := profile.LoadCompatRules(rulesPath)
-	if err != nil {
-		return nil
-	}
-	return rules
-}
-
 func parsePackageArg(arg string) (string, string) {
 	if idx := strings.Index(arg, "@"); idx > 0 {
 		return arg[:idx], "=" + arg[idx+1:]
@@ -736,7 +727,7 @@ func lockfileInSync(m *manifest.Manifest, lf *lockfile.LockFile, abiTag string) 
 		if locked == nil {
 			return false // dep not in lockfile
 		}
-		if !profile.AreCompatible(locked.ABI, abiTag, nil) {
+		if locked.ABI != abiTag && locked.ABI != "any" && abiTag != "any" {
 			return false // ABI changed (e.g. different profile)
 		}
 		// Check that locked version still satisfies the constraint

@@ -104,11 +104,13 @@ func runUninstall(cmd *cobra.Command, args []string) error {
 		if len(multi.Registries()) == 0 {
 			cmd.Println("Warning: no registries configured, cannot re-resolve lockfile")
 		} else {
-			compatRules := loadCompatRules(cfg)
-			multi.SetCompatRules(compatRules)
 			prof := getProfile(cfg)
+			if err := prof.EnsureFingerprint(); err != nil {
+				cmd.Printf("Warning: ABI probe failed: %v\n", err)
+			}
+			multi.SetLocalFingerprint(prof.ABIFingerprintHash)
 
-			resolved, err := resolver.ResolveFromManifest(m, multi, prof, compatRules, false)
+			resolved, err := resolver.ResolveFromManifest(m, multi, prof, false)
 			if err != nil {
 				cmd.Printf("Warning: could not re-resolve dependencies: %v\n", err)
 			} else {

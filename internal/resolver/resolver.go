@@ -10,17 +10,17 @@ import (
 
 // RegistryProvider implements PackageProvider using a multi-registry backend.
 type RegistryProvider struct {
-	multi       *registry.Multi
-	abiTag      string
-	compatRules []profile.CompatRule
+	multi            *registry.Multi
+	abiTag           string
+	localFingerprint string // ABI probe fingerprint of the consumer's toolchain
 }
 
 // NewRegistryProvider creates a provider backed by registries.
-func NewRegistryProvider(multi *registry.Multi, abiTag string, compatRules []profile.CompatRule) *RegistryProvider {
+func NewRegistryProvider(multi *registry.Multi, abiTag, localFingerprint string) *RegistryProvider {
 	return &RegistryProvider{
-		multi:       multi,
-		abiTag:      abiTag,
-		compatRules: compatRules,
+		multi:            multi,
+		abiTag:           abiTag,
+		localFingerprint: localFingerprint,
 	}
 }
 
@@ -65,9 +65,10 @@ func (rp *RegistryProvider) Dependencies(pkg string, version Version) (map[strin
 			continue
 		}
 
-		// Find a compatible tag
+		// Find a compatible tag by checking fingerprints
 		for _, tag := range tags {
-			if !profile.AreCompatible(tag, rp.abiTag, rp.compatRules) {
+			remoteFingerprint := rp.fetchFingerprint(reg, pkg, verStr, tag)
+			if !profile.AreCompatible(tag, rp.abiTag, remoteFingerprint, rp.localFingerprint) {
 				continue
 			}
 
@@ -102,15 +103,14 @@ func (rp *RegistryProvider) HasABI(pkg string, version Version, abiTag string) (
 			continue
 		}
 		for _, tag := range tags {
-			if profile.AreCompatible(tag, abiTag, rp.compatRules) {
+			remoteFingerprint := rp.fetchFingerprint(reg, pkg, verStr, tag)
+			if profile.AreCompatible(tag, abiTag, remoteFingerprint, rp.localFingerprint) {
 				return true, nil
 			}
 		}
 		// If no prebuilt matches, check if a source package exists that we can build.
-		// Source packages are stored under "source" or "any" ABI tag.
 		for _, tag := range tags {
 			if tag == "source" || tag == "any" {
-				// Verify it's actually a source package by checking metadata
 				meta, err := reg.FetchMeta(pkg, verStr, tag)
 				if err != nil {
 					continue
@@ -124,7 +124,7 @@ func (rp *RegistryProvider) HasABI(pkg string, version Version, abiTag string) (
 	return false, nil
 }
 
-// resolveABITag determines the actual ABI tag to use for a package.
+// ResolveABITag determines the actual ABI tag to use for a package.
 // Returns the tag and whether the package needs to be built from source.
 func (rp *RegistryProvider) ResolveABITag(pkg string, version Version) (abiTag string, needsBuild bool, sourceABI string, err error) {
 	verStr := version.String()
@@ -134,10 +134,11 @@ func (rp *RegistryProvider) ResolveABITag(pkg string, version Version) (abiTag s
 			continue
 		}
 
-		// First pass: look for a prebuilt that matches our ABI
+		// First pass: look for a prebuilt that matches our ABI via fingerprint
 		bestScore := 0
 		for _, tag := range tags {
-			score := profile.RankCompatibility(tag, rp.abiTag, rp.compatRules)
+			remoteFingerprint := rp.fetchFingerprint(reg, pkg, verStr, tag)
+			score := profile.RankCompatibility(tag, rp.abiTag, remoteFingerprint, rp.localFingerprint)
 			if score > bestScore {
 				bestScore = score
 				abiTag = tag
@@ -163,7 +164,17 @@ func (rp *RegistryProvider) ResolveABITag(pkg string, version Version) (abiTag s
 			}
 		}
 	}
-	return "", false, "", fmt.Errorf("no compatible ABI or source package for %s@%s (need %s)", pkg, version, rp.abiTag)
+	return "", false, "", fmt.Errorf("no compatible ABI or source package for %s@%s (need %s, fingerprint %s)", pkg, version, rp.abiTag, rp.localFingerprint)
+}
+
+// fetchFingerprint gets the ABI fingerprint from a package's metadata.
+// Returns empty string if the metadata doesn't have a fingerprint (old format).
+func (rp *RegistryProvider) fetchFingerprint(reg registry.Registry, pkg, version, tag string) string {
+	meta, err := reg.FetchMeta(pkg, version, tag)
+	if err != nil {
+		return ""
+	}
+	return meta.ABI.Fingerprint
 }
 
 func (rp *RegistryProvider) AvailableABITags(pkg string, version Version) ([]string, error) {
@@ -192,18 +203,14 @@ type ResolveOptions struct {
 	LockedVersions  map[string]Version
 }
 
-// ResolveFromManifest is a convenience function that resolves all dependencies
-// from a manifest. When includeBuildDeps is true, build dependencies are also
-// included in the resolution. lockedVersions, if non-nil, provides preferred
-// versions from the lockfile — the resolver tries these first to avoid
-// unnecessary version drift.
-func ResolveFromManifest(m *manifest.Manifest, multi *registry.Multi, prof *profile.Profile, compatRules []profile.CompatRule, includeBuildDeps bool, lockedVersions ...map[string]Version) ([]ResolvedPackage, error) {
-	return ResolveFromManifestWithFeatures(m, multi, prof, compatRules, includeBuildDeps, nil, lockedVersions...)
+// ResolveFromManifest resolves all dependencies from a manifest.
+func ResolveFromManifest(m *manifest.Manifest, multi *registry.Multi, prof *profile.Profile, includeBuildDeps bool, lockedVersions ...map[string]Version) ([]ResolvedPackage, error) {
+	return ResolveFromManifestWithFeatures(m, multi, prof, includeBuildDeps, nil, lockedVersions...)
 }
 
 // ResolveFromManifestWithFeatures is like ResolveFromManifest but also accepts
-// a list of enabled features. Feature-gated dependencies are included in resolution.
-func ResolveFromManifestWithFeatures(m *manifest.Manifest, multi *registry.Multi, prof *profile.Profile, compatRules []profile.CompatRule, includeBuildDeps bool, enabledFeatures []string, lockedVersions ...map[string]Version) ([]ResolvedPackage, error) {
+// a list of enabled features.
+func ResolveFromManifestWithFeatures(m *manifest.Manifest, multi *registry.Multi, prof *profile.Profile, includeBuildDeps bool, enabledFeatures []string, lockedVersions ...map[string]Version) ([]ResolvedPackage, error) {
 	if m == nil {
 		return nil, fmt.Errorf("manifest is nil")
 	}
@@ -245,7 +252,7 @@ func ResolveFromManifestWithFeatures(m *manifest.Manifest, multi *registry.Multi
 		return nil, nil
 	}
 
-	provider := NewCachingProvider(NewRegistryProvider(multi, abiTag, compatRules))
+	provider := NewCachingProvider(NewRegistryProvider(multi, abiTag, prof.ABIFingerprintHash))
 	solver := New(provider, abiTag)
 
 	// Apply lockfile preferences if provided

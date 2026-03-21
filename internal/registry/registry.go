@@ -51,8 +51,8 @@ type SearchResult struct {
 
 // Multi aggregates multiple registries, searching them in priority order.
 type Multi struct {
-	registries  []Registry
-	compatRules []profile.CompatRule
+	registries       []Registry
+	localFingerprint string // ABI probe fingerprint of the consumer's toolchain
 }
 
 // NewMulti creates a multi-registry orchestrator from config.
@@ -71,9 +71,9 @@ func NewMulti(cfg *config.Config) (*Multi, error) {
 	return m, nil
 }
 
-// SetCompatRules configures ABI compatibility rules for tag matching.
-func (m *Multi) SetCompatRules(rules []profile.CompatRule) {
-	m.compatRules = rules
+// SetLocalFingerprint configures the local ABI fingerprint for compatibility checks.
+func (m *Multi) SetLocalFingerprint(fingerprint string) {
+	m.localFingerprint = fingerprint
 }
 
 // FromConfig creates a Registry from a Remote config entry.
@@ -139,9 +139,17 @@ func (m *Multi) ListVersions(pkg string) ([]string, error) {
 	return all, nil
 }
 
+// fetchFingerprint retrieves the ABI fingerprint from a package's metadata.
+func (m *Multi) fetchFingerprint(reg Registry, pkg, version, tag string) string {
+	meta, err := reg.FetchMeta(pkg, version, tag)
+	if err != nil {
+		return ""
+	}
+	return meta.ABI.Fingerprint
+}
+
 // FindRegistry returns the first registry that has the given package+version+ABI,
-// using compatibility rules for ABI matching. Also returns the actual ABI tag
-// that matched (which may differ from the requested tag, e.g. "any" for header-only).
+// using ABI fingerprint matching. Also returns the actual ABI tag that matched.
 func (m *Multi) FindRegistry(pkg, version, abiTag string) (reg Registry, matchedTag string, err error) {
 	bestScore := 0
 	for _, r := range m.registries {
@@ -150,7 +158,8 @@ func (m *Multi) FindRegistry(pkg, version, abiTag string) (reg Registry, matched
 			continue
 		}
 		for _, t := range tags {
-			score := profile.RankCompatibility(t, abiTag, m.compatRules)
+			remoteFingerprint := m.fetchFingerprint(r, pkg, version, t)
+			score := profile.RankCompatibility(t, abiTag, remoteFingerprint, m.localFingerprint)
 			if score > bestScore {
 				bestScore = score
 				reg = r
@@ -166,15 +175,12 @@ func (m *Multi) FindRegistry(pkg, version, abiTag string) (reg Registry, matched
 
 // FetchPreviousSymbols finds the highest version of a package that is lower than
 // the given version, fetches its metadata, and returns the exported symbol list.
-// Returns nil, nil if no previous version exists (first publish).
 func (m *Multi) FetchPreviousSymbols(pkg, currentVersion, abiTag string) ([]string, string, error) {
-	// Gather all versions across registries
 	allVersions, err := m.ListVersions(pkg)
 	if err != nil {
 		return nil, "", nil // package doesn't exist yet — first publish
 	}
 
-	// Find the highest version < currentVersion
 	var best string
 	for _, v := range allVersions {
 		if v == currentVersion {
@@ -191,15 +197,14 @@ func (m *Multi) FetchPreviousSymbols(pkg, currentVersion, abiTag string) ([]stri
 		return nil, "", nil // first version
 	}
 
-	// Fetch metadata from whichever registry has it
 	for _, r := range m.registries {
 		tags, err := r.ListABITags(pkg, best)
 		if err != nil || len(tags) == 0 {
 			continue
 		}
-		// Prefer exact ABI match, fall back to any
 		for _, tag := range tags {
-			if profile.AreCompatible(tag, abiTag, m.compatRules) {
+			remoteFingerprint := m.fetchFingerprint(r, pkg, best, tag)
+			if profile.AreCompatible(tag, abiTag, remoteFingerprint, m.localFingerprint) {
 				meta, err := r.FetchMeta(pkg, best, tag)
 				if err != nil {
 					continue
@@ -209,10 +214,9 @@ func (m *Multi) FetchPreviousSymbols(pkg, currentVersion, abiTag string) ([]stri
 		}
 	}
 
-	return nil, best, nil // version exists but we couldn't fetch symbols
+	return nil, best, nil
 }
 
-// versionLess returns true if a < b using simple string-based semver comparison.
 func versionLess(a, b string) bool {
 	aParts := splitVersion(a)
 	bParts := splitVersion(b)
@@ -280,7 +284,6 @@ func (m *Multi) Search(query string) ([]SearchResult, error) {
 		for _, res := range results {
 			key := strings.ToLower(res.Name)
 			if existing, ok := seen[key]; ok {
-				// Merge versions from multiple registries
 				vSet := make(map[string]bool)
 				for _, v := range existing.Versions {
 					vSet[v] = true

@@ -147,6 +147,13 @@ func Validate(m *Manifest) error {
 		}
 	}
 
+	// Source URL determinism
+	if m.Build.Source.URL != "" && m.Build.Source.Commit == "" {
+		if strings.Contains(m.Build.Source.URL, "refs/heads/") || strings.Contains(m.Build.Source.URL, "/tarball/") {
+			errs = append(errs, "build.source.url references a branch (non-deterministic) — set build.source.commit to pin a specific revision")
+		}
+	}
+
 	// Publish include patterns should not be empty strings
 	for i, pat := range m.Publish.Include {
 		if pat == "" {
