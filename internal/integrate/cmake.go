@@ -86,6 +86,11 @@ func GenerateCMakeIntegration(seaPkgDir string) error {
 			if err := generateFindModule(seaPkgDir, modulesDir, pkg); err != nil {
 				continue // non-fatal
 			}
+			// Generate aliases under common cmake name variants so that
+			// find_package(DoubleConversion) finds our Finddouble_conversion.cmake.
+			// Packages use inconsistent names: double-conversion, DoubleConversion,
+			// double_conversion, etc.
+			generateFindModuleAliases(modulesDir, pkg)
 		}
 	}
 
@@ -161,6 +166,62 @@ func generateFindModule(seaPkgDir, modulesDir, pkg string) error {
 
 	modulePath := filepath.Join(modulesDir, fmt.Sprintf("Find%s.cmake", cmakeName))
 	return os.WriteFile(modulePath, []byte(sb.String()), 0o644)
+}
+
+// generateFindModuleAliases creates symlinks or copies of the Find module under
+// common cmake name variants. For example, "double-conversion" generates:
+//   FindDoubleConversion.cmake  (CamelCase)
+//   Finddouble_conversion.cmake (already exists, underscored)
+//   FindDouble-Conversion.cmake (capitalized with hyphen, rare but exists)
+func generateFindModuleAliases(modulesDir, pkg string) {
+	cmakeName := strings.ReplaceAll(pkg, "-", "_")
+	canonical := filepath.Join(modulesDir, fmt.Sprintf("Find%s.cmake", cmakeName))
+
+	if _, err := os.Stat(canonical); err != nil {
+		return // no canonical module to alias
+	}
+
+	// Generate CamelCase variant: "double-conversion" → "DoubleConversion"
+	camelCase := toCamelCase(pkg)
+	if camelCase != cmakeName {
+		alias := filepath.Join(modulesDir, fmt.Sprintf("Find%s.cmake", camelCase))
+		if _, err := os.Stat(alias); err != nil {
+			copyFileSimple(canonical, alias)
+		}
+	}
+
+	// Generate lowercase variant: "DoubleConversion" → "doubleconversion"
+	lower := strings.ToLower(strings.ReplaceAll(pkg, "-", ""))
+	if lower != cmakeName && lower != camelCase {
+		alias := filepath.Join(modulesDir, fmt.Sprintf("Find%s.cmake", lower))
+		if _, err := os.Stat(alias); err != nil {
+			copyFileSimple(canonical, alias)
+		}
+	}
+}
+
+// toCamelCase converts "double-conversion" to "DoubleConversion"
+func toCamelCase(s string) string {
+	parts := strings.FieldsFunc(s, func(r rune) bool {
+		return r == '-' || r == '_'
+	})
+	var result strings.Builder
+	for _, part := range parts {
+		if len(part) > 0 {
+			result.WriteString(strings.ToUpper(part[:1]))
+			result.WriteString(part[1:])
+		}
+	}
+	return result.String()
+}
+
+// copyFileSimple copies a file from src to dst.
+func copyFileSimple(src, dst string) {
+	data, err := os.ReadFile(src)
+	if err != nil {
+		return
+	}
+	os.WriteFile(dst, data, 0o644)
 }
 
 // findFirstHeader returns the first .h or .hpp file path relative to the include dir.
