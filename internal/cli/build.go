@@ -61,21 +61,6 @@ For packages with dependencies, sea build will install them to sea_packages/
 			return err
 		}
 
-		// Try to restore build cache for incremental builds
-		bc, bcErr := cache.NewBuildCache("")
-		if bcErr == nil {
-			key := bc.Key(m.Package.Name, m.Package.Version, prof.ABITag(), "")
-			if restored, err := bc.Retrieve(key, dir); err != nil {
-				if verbose {
-					cmd.Printf("Build cache miss: %v\n", err)
-				}
-			} else if restored {
-				if verbose {
-					cmd.Println("Restored incremental build cache")
-				}
-			}
-		}
-
 		// Set SEA_BUILD_PACKAGES_DIR env var
 		buildPkgDir := filepath.Join(dir, dirs.SeaBuildPackages)
 		if _, statErr := os.Stat(buildPkgDir); statErr == nil {
@@ -85,16 +70,6 @@ For packages with dependencies, sea build will install them to sea_packages/
 		installDir, err := b.Build()
 		if err != nil {
 			return err
-		}
-
-		// Save build cache for next incremental build
-		if bcErr == nil {
-			key := bc.Key(m.Package.Name, m.Package.Version, prof.ABITag(), "")
-			if err := bc.Store(key, dir); err != nil {
-				if verbose {
-					cmd.Printf("Warning: could not save build cache: %v\n", err)
-				}
-			}
 		}
 
 		cmd.Printf("Build complete: %s\n", installDir)
