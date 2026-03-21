@@ -13,7 +13,7 @@ import (
 var cleanCmd = &cobra.Command{
 	Use:   "clean",
 	Short: "Remove all build artifacts and installed packages",
-	Long: `Remove sea_packages/, sea_build/, sea_build_packages/, _src/, _fbuild/,
+	Long: `Remove sea_packages/, sea_build/, sea_build_packages/, _src/, _sea_build/,
 and sea.lock from the current project. Does not clear the global cache
 (use 'sea cache clean' for that).`,
 	RunE: func(cmd *cobra.Command, args []string) error {
