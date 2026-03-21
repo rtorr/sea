@@ -18,8 +18,16 @@ type BuildCache struct {
 	Root string // root directory for build cache storage
 }
 
-// NewBuildCache creates a BuildCache under the given cache root.
+// NewBuildCache creates a BuildCache. If cacheRoot is empty, it uses
+// ~/.sea/build-cache/ to avoid polluting the project directory.
 func NewBuildCache(cacheRoot string) (*BuildCache, error) {
+	if cacheRoot == "" {
+		home, err := os.UserHomeDir()
+		if err != nil {
+			return nil, fmt.Errorf("getting home directory: %w", err)
+		}
+		cacheRoot = filepath.Join(home, ".sea")
+	}
 	dir := filepath.Join(cacheRoot, "build-cache")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, fmt.Errorf("creating build cache directory: %w", err)
