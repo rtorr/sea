@@ -37,9 +37,22 @@ Examples:
 func init() {
 	installCmd.Flags().BoolVar(&lockedFlag, "locked", false, "install only what is in sea.lock, fail if lockfile is missing or incomplete")
 	installCmd.Flags().StringVar(&featuresFlag, "features", "", "comma-separated list of features to enable")
+	installCmd.Flags().Bool("update", false, "re-resolve to latest versions within constraints")
+	installCmd.Flags().Bool("refresh", false, "pick up newer artifacts for locked versions (security fixes, rebuilds)")
 }
 
 func runInstall(cmd *cobra.Command, args []string) error {
+	// --update delegates to sea update (re-resolve to latest versions)
+	if update, _ := cmd.Flags().GetBool("update"); update {
+		return runUpdate(cmd, args)
+	}
+
+	// --refresh delegates to sea audit --fix (pick up new artifacts)
+	if refresh, _ := cmd.Flags().GetBool("refresh"); refresh {
+		auditFixFlag = true
+		return runAudit(cmd, args)
+	}
+
 	dir, err := os.Getwd()
 	if err != nil {
 		return fmt.Errorf("getting working directory: %w", err)
