@@ -43,6 +43,7 @@ func init() {
 	rootCmd.AddCommand(cleanCmd)
 	rootCmd.AddCommand(reinstallCmd)
 	rootCmd.AddCommand(auditCmd)
+	rootCmd.AddCommand(graphCmd)
 }
 
 // Execute runs the root command.
