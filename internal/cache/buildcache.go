@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/rtorr/sea/internal/dirs"
 )
 
 // BuildCache manages cached build artifacts keyed by package identity and source hash.
@@ -104,10 +106,10 @@ func ComputeSourceHash(projectDir string, buildScript string) (string, error) {
 	// Collect source files (skip build output and cache dirs)
 	var files []string
 	skipDirs := map[string]bool{
-		"sea_build":          true,
-		"sea_packages":       true,
-		"sea_build_packages": true,
-		".git":               true,
+		dirs.SeaBuild:         true,
+		dirs.SeaPackages:      true,
+		dirs.SeaBuildPackages: true,
+		".git":                true,
 	}
 
 	err = filepath.Walk(projectDir, func(path string, info os.FileInfo, err error) error {

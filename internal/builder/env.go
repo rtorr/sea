@@ -5,6 +5,7 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/rtorr/sea/internal/dirs"
 	"github.com/rtorr/sea/internal/manifest"
 	"github.com/rtorr/sea/internal/profile"
 )
@@ -35,7 +36,7 @@ func BuildEnv(m *manifest.Manifest, prof *profile.Profile, projectDir, installDi
 		fmt.Sprintf("SEA_ABI_TAG=%s", prof.ABITag()),
 		fmt.Sprintf("SEA_PROJECT_DIR=%s", projectDir),
 		fmt.Sprintf("SEA_INSTALL_DIR=%s", installDir),
-		fmt.Sprintf("SEA_PACKAGES_DIR=%s", filepath.Join(projectDir, "sea_packages")),
+		fmt.Sprintf("SEA_PACKAGES_DIR=%s", filepath.Join(projectDir, dirs.SeaPackages)),
 	)
 
 	if prof.Sysroot != "" {

@@ -154,7 +154,3 @@ func summarizePlatforms(tags []string) string {
 	}
 	return "[" + strings.Join(parts, ", ") + "]"
 }
-
-func init() {
-	// Register in root.go is needed — let me check if it's there
-}

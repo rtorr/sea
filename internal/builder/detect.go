@@ -5,6 +5,8 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/rtorr/sea/internal/dirs"
 )
 
 // BuildSystem identifies how to build a project.
@@ -73,7 +75,7 @@ func DetectBuildSystem(projectDir, manifestScript string) BuildSystem {
 func GenerateBuildCommands(system BuildSystem, projectDir, installDir, cc, cxx, cflags, cxxflags string, seaPackagesDirs ...string) ([][]string, error) {
 	switch system {
 	case BuildCMake:
-		buildDir := filepath.Join(projectDir, "_sea_build")
+		buildDir := filepath.Join(projectDir, dirs.SeaBuildInternal)
 		cmakeArgs := []string{
 			"cmake", projectDir,
 			"-B", buildDir,
@@ -133,7 +135,7 @@ func GenerateBuildCommands(system BuildSystem, projectDir, installDir, cc, cxx, 
 		return [][]string{makeArgs, installArgs}, nil
 
 	case BuildMeson:
-		buildDir := filepath.Join(projectDir, "_sea_build")
+		buildDir := filepath.Join(projectDir, dirs.SeaBuildInternal)
 		setupArgs := []string{
 			"meson", "setup", buildDir, projectDir,
 			"--prefix=" + installDir,

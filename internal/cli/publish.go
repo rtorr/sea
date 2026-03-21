@@ -14,6 +14,7 @@ import (
 	"github.com/rtorr/sea/internal/abi"
 	"github.com/rtorr/sea/internal/archive"
 	"github.com/rtorr/sea/internal/config"
+	"github.com/rtorr/sea/internal/dirs"
 	"github.com/rtorr/sea/internal/integrate"
 	"github.com/rtorr/sea/internal/manifest"
 	"github.com/rtorr/sea/internal/registry"
@@ -105,10 +106,10 @@ func runPublish(cmd *cobra.Command, args []string) error {
 	if m.EffectiveKind() == "header-only" {
 		buildABI = prof.ABITag()
 	}
-	srcDir := filepath.Join(dir, "sea_build", buildABI)
+	srcDir := filepath.Join(dir, dirs.SeaBuild, buildABI)
 	if _, err := os.Stat(srcDir); os.IsNotExist(err) {
 		// Also try the publish ABI tag (in case someone manually built for "any")
-		srcDir = filepath.Join(dir, "sea_build", abiTag)
+		srcDir = filepath.Join(dir, dirs.SeaBuild, abiTag)
 		if _, err := os.Stat(srcDir); os.IsNotExist(err) {
 			srcDir = dir
 		}
@@ -145,8 +146,8 @@ func runPublish(cmd *cobra.Command, args []string) error {
 
 	// Extract symbols from libraries — track shared and static separately
 	var libs []archive.MetaLib
-	var allSymbols []abi.Symbol      // all symbols (for metadata)
-	var sharedSymbols []abi.Symbol   // symbols from shared libraries only
+	var allSymbols []abi.Symbol    // all symbols (for metadata)
+	var sharedSymbols []abi.Symbol // symbols from shared libraries only
 	libDir := filepath.Join(srcDir, "lib")
 	if entries, err := os.ReadDir(libDir); err == nil {
 		for _, e := range entries {
@@ -452,8 +453,8 @@ func checkStaticLeaks(cmd *cobra.Command, multi *registry.Multi, m *manifest.Man
 // the build directory, for symbol extraction.
 func findDepSharedLib(baseDir string, depName string) string {
 	for _, searchDir := range []string{
-		filepath.Join(baseDir, "..", "sea_packages", depName, "lib"),
-		filepath.Join(baseDir, "..", "sea_build_packages", depName, "lib"),
+		filepath.Join(baseDir, "..", dirs.SeaPackages, depName, "lib"),
+		filepath.Join(baseDir, "..", dirs.SeaBuildPackages, depName, "lib"),
 	} {
 		entries, err := os.ReadDir(searchDir)
 		if err != nil {

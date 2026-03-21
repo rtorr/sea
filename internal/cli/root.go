@@ -1,11 +1,14 @@
 package cli
 
 import (
+	"errors"
+	"os"
+
 	"github.com/spf13/cobra"
 )
 
 var (
-	verbose bool
+	verbose     bool
 	profileFlag string
 )
 
@@ -43,7 +46,16 @@ func init() {
 
 // Execute runs the root command.
 func Execute() error {
-	return rootCmd.Execute()
+	rootCmd.SilenceErrors = true
+	rootCmd.SilenceUsage = true
+	err := rootCmd.Execute()
+	if err != nil {
+		// errUpdatesAvailable means --check found updates; exit 1 without "Error:" prefix
+		if errors.Is(err, errUpdatesAvailable) {
+			os.Exit(1)
+		}
+	}
+	return err
 }
 
 var versionCmd = &cobra.Command{

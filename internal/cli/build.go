@@ -8,6 +8,7 @@ import (
 	"github.com/rtorr/sea/internal/builder"
 	"github.com/rtorr/sea/internal/cache"
 	"github.com/rtorr/sea/internal/config"
+	"github.com/rtorr/sea/internal/dirs"
 	"github.com/rtorr/sea/internal/integrate"
 	"github.com/rtorr/sea/internal/manifest"
 	"github.com/rtorr/sea/internal/profile"
@@ -19,33 +20,29 @@ import (
 var buildCmd = &cobra.Command{
 	Use:   "build",
 	Short: "Build a source package using the build script",
+	Long: `Build the current project from source.
+
+sea build will:
+  1. Download the source archive (if [build.source] is set)
+  2. Run the build script or auto-detect the build system
+  3. Install the output to sea_build/{abi_tag}/
+
+For packages with dependencies, sea build will install them to sea_packages/
+(runtime deps) and sea_build_packages/ (build-only deps) automatically.`,
 	RunE: func(cmd *cobra.Command, args []string) error {
 		dir, err := os.Getwd()
 		if err != nil {
 			return fmt.Errorf("getting working directory: %w", err)
 		}
 
-		m, err := manifest.Load(dir)
-		if err != nil {
-			return fmt.Errorf("loading manifest: %w", err)
-		}
-
-		if m.EffectiveKind() == "header-only" && m.Build.Script == "" && m.Build.Source.URL == "" {
-			cmd.Println("Package is header-only with no build script or source URL — nothing to build.")
-			return nil
-		}
-
-		if m.Build.Script == "" && m.Build.Source.URL == "" {
-			// Check if the project directory has a recognizable build system
-			system := builder.DetectBuildSystem(dir, "")
-			if system == builder.BuildUnknown {
-				return fmt.Errorf("cannot build: no [build].script, no [build.source].url, and no recognized build system (CMakeLists.txt, Makefile, meson.build)")
-			}
-		}
-
 		cfg, err := config.Load()
 		if err != nil {
 			return fmt.Errorf("loading config: %w", err)
+		}
+
+		m, err := manifest.Load(dir)
+		if err != nil {
+			return fmt.Errorf("loading manifest: %w", err)
 		}
 
 		prof := getProfile(cfg)
@@ -63,32 +60,24 @@ var buildCmd = &cobra.Command{
 		if err != nil {
 			return err
 		}
-		b.Verbose = verbose
 
-		// Set up build cache
-		c, cacheErr := cache.New(cfg)
-		var bc *cache.BuildCache
-		if cacheErr == nil {
-			bc, _ = cache.NewBuildCache(c.Layout.Root)
-		}
-
-		// Check build cache before building
-		if bc != nil {
-			cacheKey, hit, err := b.CheckBuildCache(bc)
-			if err == nil && hit {
-				installDir, err := b.RestoreFromCache(bc, cacheKey)
-				if err == nil {
-					cmd.Printf("Build restored from cache: %s\n", installDir)
-					return nil
-				}
+		// Try to restore build cache for incremental builds
+		bc, bcErr := cache.NewBuildCache("")
+		if bcErr == nil {
+			key := bc.Key(m.Package.Name, m.Package.Version, prof.ABITag(), "")
+			if restored, err := bc.Retrieve(key, dir); err != nil {
 				if verbose {
-					cmd.Printf("Warning: cache restore failed: %v\n", err)
+					cmd.Printf("Build cache miss: %v\n", err)
+				}
+			} else if restored {
+				if verbose {
+					cmd.Println("Restored incremental build cache")
 				}
 			}
 		}
 
 		// Set SEA_BUILD_PACKAGES_DIR env var
-		buildPkgDir := filepath.Join(dir, "sea_build_packages")
+		buildPkgDir := filepath.Join(dir, dirs.SeaBuildPackages)
 		if _, statErr := os.Stat(buildPkgDir); statErr == nil {
 			os.Setenv("SEA_BUILD_PACKAGES_DIR", buildPkgDir)
 		}
@@ -98,29 +87,12 @@ var buildCmd = &cobra.Command{
 			return err
 		}
 
-		// Verify the build produced output
-		entries, readErr := os.ReadDir(installDir)
-		if readErr != nil {
-			return fmt.Errorf("reading build output directory: %w", readErr)
-		}
-		if len(entries) == 0 {
-			return fmt.Errorf("build script produced no output in %s", installDir)
-		}
-
-		// Run build verification checks (expected libs, headers, symbols, test program)
-		if err := builder.VerifyBuildOutput(m, prof, dir, installDir); err != nil {
-			return err
-		}
-
-		// Store in build cache after successful build
-		if bc != nil {
-			sourceHash, err := b.SourceHash()
-			if err == nil {
-				key := b.BuildCacheKey(bc, sourceHash)
-				if storeErr := b.StoreBuildCache(bc, key, installDir); storeErr != nil {
-					if verbose {
-						cmd.Printf("Warning: could not store build in cache: %v\n", storeErr)
-					}
+		// Save build cache for next incremental build
+		if bcErr == nil {
+			key := bc.Key(m.Package.Name, m.Package.Version, prof.ABITag(), "")
+			if err := bc.Store(key, dir); err != nil {
+				if verbose {
+					cmd.Printf("Warning: could not save build cache: %v\n", err)
 				}
 			}
 		}
@@ -130,7 +102,9 @@ var buildCmd = &cobra.Command{
 	},
 }
 
-// installBuildDeps resolves and installs build dependencies into sea_build_packages/.
+// installBuildDeps resolves and installs all dependencies (runtime + build-only)
+// before building. Runtime deps go to sea_packages/, build-only deps go to
+// sea_build_packages/.
 func installBuildDeps(cmd *cobra.Command, dir string, m *manifest.Manifest, cfg *config.Config, prof *profile.Profile) error {
 	multi, err := registry.NewMulti(cfg)
 	if err != nil {
@@ -165,8 +139,8 @@ func installBuildDeps(cmd *cobra.Command, dir string, m *manifest.Manifest, cfg 
 		return fmt.Errorf("initializing cache: %w", err)
 	}
 
-	seaPkgDir := filepath.Join(dir, "sea_packages")
-	buildPkgDir := filepath.Join(dir, "sea_build_packages")
+	seaPkgDir := filepath.Join(dir, dirs.SeaPackages)
+	buildPkgDir := filepath.Join(dir, dirs.SeaBuildPackages)
 
 	for _, pkg := range resolved {
 		verStr := pkg.Version.String()

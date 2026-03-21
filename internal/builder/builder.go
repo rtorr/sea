@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/rtorr/sea/internal/cache"
+	"github.com/rtorr/sea/internal/dirs"
 	"github.com/rtorr/sea/internal/manifest"
 	"github.com/rtorr/sea/internal/profile"
 )
@@ -50,7 +51,7 @@ func New(m *manifest.Manifest, prof *profile.Profile, projectDir string) (*Build
 //  2. If [build.source].url is set → download source, auto-detect build system, build
 //  3. Auto-detect build system in the project directory
 func (b *Builder) Build() (string, error) {
-	installDir := filepath.Join(b.ProjectDir, "sea_build", b.Profile.ABITag())
+	installDir := filepath.Join(b.ProjectDir, dirs.SeaBuild, b.Profile.ABITag())
 	if err := os.MkdirAll(installDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating build output directory: %w", err)
 	}
@@ -60,7 +61,7 @@ func (b *Builder) Build() (string, error) {
 		// If there's also an explicit script, download source then run the script
 		// (the script has access to the source via _src/src/)
 		if b.Manifest.Build.Script != "" {
-			srcCacheDir := filepath.Join(b.ProjectDir, "_src")
+			srcCacheDir := filepath.Join(b.ProjectDir, dirs.SrcCache)
 			srcDir := filepath.Join(srcCacheDir, "src")
 			if _, err := os.Stat(srcDir); os.IsNotExist(err) {
 				if b.Verbose {
@@ -108,8 +109,8 @@ func (b *Builder) Build() (string, error) {
 		cflags := b.Profile.CFlags
 		cxxflags := b.Profile.CXXFlags
 
-		seaPkgDir := filepath.Join(b.ProjectDir, "sea_packages")
-		seaBuildPkgDir := filepath.Join(b.ProjectDir, "sea_build_packages")
+		seaPkgDir := filepath.Join(b.ProjectDir, dirs.SeaPackages)
+		seaBuildPkgDir := filepath.Join(b.ProjectDir, dirs.SeaBuildPackages)
 		commands, err := GenerateBuildCommands(system, b.ProjectDir, installDir, cc, cxx, cflags, cxxflags, seaPkgDir, seaBuildPkgDir)
 		if err != nil {
 			return "", err
@@ -148,7 +149,7 @@ func (b *Builder) Build() (string, error) {
 
 // buildFromSourceURL downloads source from [build.source].url and builds it.
 func (b *Builder) buildFromSourceURL(installDir string) (string, error) {
-	srcCacheDir := filepath.Join(b.ProjectDir, "_src")
+	srcCacheDir := filepath.Join(b.ProjectDir, dirs.SrcCache)
 
 	// Check if already downloaded
 	srcDir := filepath.Join(srcCacheDir, "src")
@@ -189,8 +190,8 @@ func (b *Builder) buildFromSourceURL(installDir string) (string, error) {
 	cflags := b.Profile.CFlags
 	cxxflags := b.Profile.CXXFlags
 
-	seaPkgDir := filepath.Join(b.ProjectDir, "sea_packages")
-	seaBuildPkgDir := filepath.Join(b.ProjectDir, "sea_build_packages")
+	seaPkgDir := filepath.Join(b.ProjectDir, dirs.SeaPackages)
+	seaBuildPkgDir := filepath.Join(b.ProjectDir, dirs.SeaBuildPackages)
 	commands, err := GenerateBuildCommands(system, buildDir, installDir, cc, cxx, cflags, cxxflags, seaPkgDir, seaBuildPkgDir)
 	if err != nil {
 		return "", err
@@ -354,7 +355,7 @@ func (b *Builder) CheckBuildCache(bc *cache.BuildCache) (string, bool, error) {
 
 // RestoreFromCache copies cached build output to the install directory.
 func (b *Builder) RestoreFromCache(bc *cache.BuildCache, key string) (string, error) {
-	installDir := filepath.Join(b.ProjectDir, "sea_build", b.Profile.ABITag())
+	installDir := filepath.Join(b.ProjectDir, dirs.SeaBuild, b.Profile.ABITag())
 	if err := os.MkdirAll(installDir, 0o755); err != nil {
 		return "", fmt.Errorf("creating build output directory: %w", err)
 	}
