@@ -10,6 +10,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/rtorr/sea/internal/abi"
 	"github.com/rtorr/sea/internal/archive"
@@ -476,6 +477,7 @@ func init() {
 	publishCmd.Flags().Bool("skip-verify", false, "skip ABI version verification and static leak checking")
 	publishCmd.Flags().Bool("dry-run", false, "show what would be published without uploading")
 	publishCmd.Flags().Bool("ci", false, "trigger CI to build and publish for all platforms")
+	publishCmd.Flags().Bool("watch", false, "wait for CI to complete (requires gh CLI, use with --ci)")
 }
 
 func isLibrary(name string) bool {
@@ -568,12 +570,57 @@ func runPublishCI(cmd *cobra.Command, args []string) error {
 	}
 	defer resp.Body.Close()
 
-	if resp.StatusCode == 204 {
-		cmd.Printf("Triggered CI build for %s@%s on all platforms\n", m.Package.Name, m.Package.Version)
+	if resp.StatusCode != 204 {
+		respBody, _ := io.ReadAll(resp.Body)
+		return fmt.Errorf("CI trigger failed (HTTP %d): %s", resp.StatusCode, string(respBody))
+	}
+
+	cmd.Printf("Triggered CI build for %s@%s on all platforms\n", m.Package.Name, m.Package.Version)
+
+	// Check if --watch flag is set (or if gh CLI is available to watch)
+	watchFlag, _ := cmd.Flags().GetBool("watch")
+	if !watchFlag {
 		cmd.Printf("View at: https://github.com/%s/actions\n", repo)
+		cmd.Println("Use --watch to wait for CI to complete.")
 		return nil
 	}
 
-	respBody, _ := io.ReadAll(resp.Body)
-	return fmt.Errorf("CI trigger failed (HTTP %d): %s", resp.StatusCode, string(respBody))
+	// Wait for the run to appear, then watch it via gh CLI
+	cmd.Println("Waiting for CI run to start...")
+
+	// Give GitHub a moment to register the workflow run
+	time.Sleep(5 * time.Second)
+
+	// Find the latest workflow_dispatch run
+	ghArgs := []string{"run", "list",
+		"--repo", repo,
+		"--event", "workflow_dispatch",
+		"--limit", "1",
+		"--json", "databaseId",
+		"--jq", ".[0].databaseId",
+	}
+	out, err := exec.Command("gh", ghArgs...).Output()
+	if err != nil {
+		cmd.Printf("Could not find CI run (is 'gh' installed?). View at: https://github.com/%s/actions\n", repo)
+		return nil
+	}
+
+	runID := strings.TrimSpace(string(out))
+	if runID == "" {
+		cmd.Printf("CI run not found yet. View at: https://github.com/%s/actions\n", repo)
+		return nil
+	}
+
+	cmd.Printf("Watching CI run %s...\n", runID)
+
+	// gh run watch streams output and exits with the run's exit code
+	watchCmd := exec.Command("gh", "run", "watch", runID, "--repo", repo, "--exit-status")
+	watchCmd.Stdout = os.Stdout
+	watchCmd.Stderr = os.Stderr
+	if err := watchCmd.Run(); err != nil {
+		return fmt.Errorf("CI run failed: %w", err)
+	}
+
+	cmd.Printf("\nCI build complete for %s@%s\n", m.Package.Name, m.Package.Version)
+	return nil
 }
